@@ -669,6 +669,7 @@ async function getBrowser() {
     console.log('Launching browser...');
     const { browser: realBrowser, page: realPage } = await connect({
       headless: isHeadless,
+      disableXvfb: !isHeadless && process.platform === 'linux' && Boolean(process.env.DISPLAY),
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
