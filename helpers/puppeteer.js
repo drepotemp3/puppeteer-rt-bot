@@ -670,10 +670,7 @@ async function getBrowser() {
     console.log(`Browser launch config: headless=${String(isHeadless)} display=${process.env.DISPLAY || ''} disableXvfb=${String(disableXvfb)}`);
 
     console.log('Launching browser...');
-    const { browser: realBrowser, page: realPage } = await connect({
-      headless: isHeadless,
-      disableXvfb,
-      args: [
+    const launchArgs = [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
@@ -728,7 +725,15 @@ async function getBrowser() {
         '--disable-features=SidePanelCustomizeChromeV9',
         '--disable-features=SidePanelCustomizeChromeV10',
         ...(!isHeadless ? ['--start-maximized'] : ['--window-size=1920,1080'])
-      ],
+      ];
+
+    let realBrowser;
+    let realPage;
+
+    const connectPromise = connect({
+      headless: isHeadless,
+      disableXvfb,
+      args: launchArgs,
       customConfig: {
         userDataDir: userDataDir,
         ...(chromePath && { chromePath })
@@ -739,6 +744,26 @@ async function getBrowser() {
         protocolTimeout: Number(process.env.PUPPETEER_PROTOCOL_TIMEOUT_MS || 120000)
       }
     });
+
+    try {
+      const connected = await Promise.race([
+        connectPromise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Browser connect timeout')), 45000))
+      ]);
+      realBrowser = connected.browser;
+      realPage = connected.page;
+    } catch (err) {
+      console.error(`Browser connect failed: ${err?.message || String(err)} — falling back to puppeteer.launch`);
+      realBrowser = await puppeteer.launch({
+        headless: isHeadless,
+        executablePath: chromePath,
+        userDataDir,
+        args: launchArgs,
+        defaultViewport: null
+      });
+      const pages = await realBrowser.pages().catch(() => []);
+      realPage = pages && pages[0] ? pages[0] : await realBrowser.newPage();
+    }
 
     browser = realBrowser;
     page = realPage;
