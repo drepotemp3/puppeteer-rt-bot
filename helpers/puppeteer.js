@@ -84,14 +84,6 @@ function shouldRunHeadless() {
     return value === 'true' || value === '1' || value === 'yes';
   }
 
-  const vpsRaw = process.env.VPS ?? process.env.IS_VPS ?? process.env.DEPLOY_TARGET;
-  if (vpsRaw != null && String(vpsRaw).trim() !== '') {
-    const value = String(vpsRaw).trim().toLowerCase();
-    if (value === 'true' || value === '1' || value === 'yes' || value === 'vps' || value === 'server') {
-      return true;
-    }
-  }
-
   if (process.platform !== 'win32' && !process.env.DISPLAY) {
     return true;
   }
@@ -904,6 +896,12 @@ async function loginToX(userId) {
     return true;
   }
 
+  const vpsRaw = process.env.VPS ?? process.env.IS_VPS ?? process.env.DEPLOY_TARGET;
+  const isVps = vpsRaw != null && String(vpsRaw).trim() !== '' && (() => {
+    const value = String(vpsRaw).trim().toLowerCase();
+    return value === 'true' || value === '1' || value === 'yes' || value === 'vps' || value === 'server';
+  })();
+
   const userIdStr = userId != null ? userId.toString() : null;
   let botUser = userIdStr ? await BotUser.findOne({ userId: userIdStr }) : null;
   if (!botUser) {
@@ -950,6 +948,18 @@ async function loginToX(userId) {
       return true;
     }
 
+    if (isVps) {
+      const requiresHeadful = process.platform !== 'win32';
+      const hasDisplay = Boolean(process.env.DISPLAY);
+      const isHeadless = shouldRunHeadless();
+      if (requiresHeadful && (!hasDisplay || isHeadless)) {
+        console.error('❌ VPS manual login requires a virtual display. Start Xvfb/VNC, set DISPLAY=:99, and set HEADLESS=false, then press Login again.');
+        await dbg('loginToX.vpsManualBlocked', { hasDisplay, isHeadless });
+        return false;
+      }
+      await dbg('loginToX.step', { name: 'vpsManualLoginOnly' });
+      console.log('🖥️ VPS mode: skipping automated credential login; waiting for manual login in the browser window...');
+    } else {
     const hasCreds = Boolean(botUser?.xPassword && (botUser?.xEmail || botUser?.xUsername));
     await dbg('loginToX.hasCreds', { hasCreds });
     if (hasCreds) {
@@ -985,6 +995,7 @@ async function loginToX(userId) {
         console.error('❌ X blocked automated login flow.');
         return false;
       }
+    }
     }
 
     // Check if we're in local development mode
