@@ -2,11 +2,12 @@ import { Markup } from 'telegraf';
 import { Admin, BotUser, ApprovedGroup } from '../models/db.js';
 import fs from 'fs';
 import path from 'path';
-import { loginToX, extractXPostId, logout, isLoggedIn, resetBrowserSession, processSingleRetweet, undoRepost, postWithGif } from '../helpers/puppeteer.js';
+import { loginToX, extractXPostId, logout, isLoggedIn, resetBrowserSession, processSingleRetweet, undoRepost, postWithGif, saveAuthState, loadAuthState } from '../helpers/puppeteer.js';
 
 const userStates = {};
 const groupSessions = {};
 const loginLocks = {};
+const authStateLocks = {};
 
 const QUOTES = [
   'Your limits are often just old stories waiting to be rewritten.',
@@ -355,6 +356,8 @@ function mainMenuKeyboard() {
   } else {
     buttons.push([Markup.button.callback('🔐 Login', 'menu_login')]);
   }
+  buttons.push([Markup.button.callback('💾 Export Auth', 'menu_export_auth')]);
+  buttons.push([Markup.button.callback('📥 Import Auth', 'menu_import_auth')]);
   buttons.push([Markup.button.callback('👥 Manage Admins', 'menu_admins')]);
   buttons.push([Markup.button.callback('👥 Manage Groups', 'menu_groups')]);
   return Markup.inlineKeyboard(buttons);
@@ -642,6 +645,115 @@ export function setupBot(bot) {
       }
     } catch (err) {
       await safeReply(ctx, `Error logging out: ${err.message}`);
+    }
+  });
+
+  bot.action('menu_export_auth', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    const lockKey = ctx.from?.id != null ? ctx.from.id.toString() : null;
+    if (lockKey && authStateLocks[lockKey]) return;
+    if (lockKey) authStateLocks[lockKey] = true;
+    let background = false;
+    try {
+      if (!isLoggedIn()) {
+        await safeReply(ctx, 'Not logged in.');
+        if (ctx.callbackQuery && ctx.callbackQuery.message) {
+          await ctx.editMessageText('Welcome to Retweet Bot!', mainMenuKeyboard()).catch(() => {});
+        }
+        return;
+      }
+
+      const chatId = ctx.chat?.id;
+      const messageId = ctx.callbackQuery?.message?.message_id;
+      if (ctx.callbackQuery && ctx.callbackQuery.message) {
+        await ctx.editMessageText('Exporting auth...', mainMenuKeyboard()).catch(() => {});
+      } else {
+        await safeReply(ctx, 'Exporting auth...');
+      }
+
+      background = true;
+      setImmediate(async () => {
+        try {
+          await saveAuthState();
+          if (chatId && messageId) {
+            await bot.telegram.editMessageText(chatId, messageId, undefined, 'Auth exported to .auth_state/', mainMenuKeyboard()).catch(() => {});
+          } else {
+            await safeReply(ctx, 'Auth exported to .auth_state/');
+          }
+        } catch (e) {
+          const msg = e?.message || String(e);
+          if (chatId && messageId) {
+            await bot.telegram.editMessageText(chatId, messageId, undefined, `Export failed: ${msg}`, mainMenuKeyboard()).catch(() => {});
+          } else {
+            await safeReply(ctx, `Export failed: ${msg}`);
+          }
+        } finally {
+          if (lockKey) authStateLocks[lockKey] = false;
+        }
+      });
+    } catch (err) {
+      await safeReply(ctx, `Error: ${err.message}`);
+    } finally {
+      if (!background && lockKey) authStateLocks[lockKey] = false;
+    }
+  });
+
+  bot.action('menu_import_auth', async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    const lockKey = ctx.from?.id != null ? ctx.from.id.toString() : null;
+    if (lockKey && authStateLocks[lockKey]) return;
+    if (lockKey) authStateLocks[lockKey] = true;
+    let background = false;
+    try {
+      const chatId = ctx.chat?.id;
+      const messageId = ctx.callbackQuery?.message?.message_id;
+      if (ctx.callbackQuery && ctx.callbackQuery.message) {
+        await ctx.editMessageText('Importing auth...', mainMenuKeyboard()).catch(() => {});
+      } else {
+        await safeReply(ctx, 'Importing auth...');
+      }
+
+      background = true;
+      setImmediate(async () => {
+        let loggedIn = false;
+        try {
+          loggedIn = await loadAuthState();
+        } catch (e) {
+          loggedIn = false;
+          const msg = e?.message || String(e);
+          if (chatId && messageId) {
+            await bot.telegram.editMessageText(chatId, messageId, undefined, `Import failed: ${msg}`, mainMenuKeyboard()).catch(() => {});
+          } else {
+            await safeReply(ctx, `Import failed: ${msg}`);
+          }
+          if (lockKey) authStateLocks[lockKey] = false;
+          return;
+        }
+
+        await BotUser.updateOne(
+          { userId: ctx.from.id.toString() },
+          {
+            $set: { isLoggedIn: Boolean(loggedIn), lastLoginAt: loggedIn ? new Date() : null },
+            $setOnInsert: { username: ctx.from.username || null }
+          },
+          { upsert: true }
+        ).catch(() => {});
+
+        try {
+          const text = loggedIn ? 'Auth imported. Logged in.' : 'Auth imported. Still not logged in.';
+          if (chatId && messageId) {
+            await bot.telegram.editMessageText(chatId, messageId, undefined, text, mainMenuKeyboard()).catch(() => {});
+          } else {
+            await safeReply(ctx, text);
+          }
+        } finally {
+          if (lockKey) authStateLocks[lockKey] = false;
+        }
+      });
+    } catch (err) {
+      await safeReply(ctx, `Error: ${err.message}`);
+    } finally {
+      if (!background && lockKey) authStateLocks[lockKey] = false;
     }
   });
 

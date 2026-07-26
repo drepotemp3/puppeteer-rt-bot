@@ -4,7 +4,7 @@ import { Admin, BotUser } from '../models/db.js';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
-import { mkdir } from 'fs/promises';
+import { mkdir, readFile, writeFile } from 'fs/promises';
 
 let browser = null;
 let page = null;
@@ -14,6 +14,7 @@ let isProcessingQueue = false;
 let browserConnecting = false;
 let stopRequested = false;
 const LOGIN_BLOCK_ERROR_TEXT = 'Please use X.com or official X apps to proceed with log in/sign up.';
+const LOGIN_LIMITED_TEXT = "we've temporarily limited your login";
 const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36';
 
 // #region debug-point x-login-not-typing-client
@@ -135,6 +136,82 @@ async function resolveChromePath() {
   );
 }
 
+async function resolvePreferredUserAgent(targetPage) {
+  const explicit = process.env.USER_AGENT || process.env.X_USER_AGENT || process.env.BROWSER_USER_AGENT;
+  if (explicit && String(explicit).trim()) return String(explicit).trim();
+  try {
+    const b = targetPage?.browser?.();
+    if (b && typeof b.userAgent === 'function') {
+      const ua = await b.userAgent();
+      if (ua && String(ua).trim()) return String(ua).trim();
+    }
+  } catch (e) {}
+  return null;
+}
+
+function getAuthStateDir() {
+  const configured = process.env.AUTH_STATE_DIR || process.env.X_AUTH_STATE_DIR;
+  if (configured && String(configured).trim()) {
+    return path.resolve(String(configured).trim());
+  }
+  return path.resolve(process.cwd(), '.auth_state');
+}
+
+async function ensureXOrigin(targetPage) {
+  const url = targetPage?.url?.() || '';
+  if (typeof url === 'string' && url.includes('://') && url.includes('x.com')) return;
+  await targetPage.goto('https://x.com', { waitUntil: 'domcontentloaded', timeout: 45000 });
+}
+
+async function saveAuthState() {
+  const p = await getPage();
+  if (!p || p.isClosed()) throw new Error('No active browser page');
+  await ensureXOrigin(p);
+  const dir = getAuthStateDir();
+  await mkdir(dir, { recursive: true });
+  const cookies = await p.cookies().catch(() => []);
+  const sessionStorage = await p.evaluate(() => JSON.stringify(sessionStorage)).catch(() => '{}');
+  const localStorage = await p.evaluate(() => JSON.stringify(localStorage)).catch(() => '{}');
+  await writeFile(path.join(dir, 'cookies.json'), JSON.stringify(cookies, null, 2));
+  await writeFile(path.join(dir, 'sessionStorage.json'), String(sessionStorage || '{}'));
+  await writeFile(path.join(dir, 'localStorage.json'), String(localStorage || '{}'));
+  return dir;
+}
+
+async function loadAuthState() {
+  const p = await getPage();
+  if (!p || p.isClosed()) throw new Error('No active browser page');
+  const dir = getAuthStateDir();
+  const cookiesRaw = await readFile(path.join(dir, 'cookies.json'), 'utf8');
+  const sessionStorageRaw = await readFile(path.join(dir, 'sessionStorage.json'), 'utf8');
+  const localStorageRaw = await readFile(path.join(dir, 'localStorage.json'), 'utf8');
+  const cookies = JSON.parse(cookiesRaw || '[]');
+  const sessionStorage = JSON.parse(sessionStorageRaw || '{}');
+  const localStorage = JSON.parse(localStorageRaw || '{}');
+
+  await ensureXOrigin(p);
+  if (Array.isArray(cookies) && cookies.length) {
+    await p.setCookie(...cookies).catch(() => {});
+  }
+  await p.evaluate((data) => {
+    if (!location.hostname.endsWith('x.com')) return;
+    for (const [k, v] of Object.entries(data || {})) {
+      try { sessionStorage.setItem(k, String(v)); } catch (e) {}
+    }
+  }, sessionStorage).catch(() => {});
+  await p.evaluate((data) => {
+    if (!location.hostname.endsWith('x.com')) return;
+    for (const [k, v] of Object.entries(data || {})) {
+      try { localStorage.setItem(k, String(v)); } catch (e) {}
+    }
+  }, localStorage).catch(() => {});
+
+  await p.goto('https://x.com/home', { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+  const loggedIn = await isLoggedInPage(p);
+  isLoggedInGlobal = Boolean(loggedIn);
+  return loggedIn;
+}
+
 async function preparePage(targetPage) {
   await targetPage.evaluateOnNewDocument(() => {
     Object.defineProperty(navigator, 'webdriver', {
@@ -178,7 +255,15 @@ async function preparePage(targetPage) {
     });
   });
 
-  await targetPage.setUserAgent(DEFAULT_USER_AGENT);
+  const tz = process.env.TZ;
+  if (tz && String(tz).trim()) {
+    await targetPage.emulateTimezone(String(tz).trim()).catch(() => {});
+  }
+
+  const ua = await resolvePreferredUserAgent(targetPage);
+  if (ua) {
+    await targetPage.setUserAgent(ua);
+  }
 }
 
 async function isLoggedInPage(targetPage) {
@@ -533,10 +618,12 @@ async function hasLoginBlockError(targetPage) {
   try {
     return await targetPage.evaluate((errorText) => {
       const bodyText = document.body?.innerText || '';
+      const bodyLower = bodyText.toLowerCase();
       if (bodyText.includes(errorText)) return true;
+      if (bodyLower.includes("we've temporarily limited your login")) return true;
 
       return Array.from(document.querySelectorAll('p, span, div')).some((node) =>
-        node.textContent?.includes(errorText)
+        (node.textContent || '').includes(errorText) || (node.textContent || '').toLowerCase().includes("we've temporarily limited your login")
       );
     }, LOGIN_BLOCK_ERROR_TEXT);
   } catch (error) {
@@ -1615,6 +1702,8 @@ export {
   processSingleRetweet,
   undoRepost,
   postWithGif,
+  saveAuthState,
+  loadAuthState,
   logout,
   isLoggedIn,
   clearSessionProfile,

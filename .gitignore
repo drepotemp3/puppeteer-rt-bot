@@ -32,6 +32,7 @@ chrome-out.log
 chrome-err.log
 *.chrome-profile/
 chrome-data/
+.auth_state/
 
 # Test/temp files
 comment-rt-button.html
