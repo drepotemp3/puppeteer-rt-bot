@@ -56,3 +56,42 @@
 {"ts":1785097234077,"session":"x-login-not-typing","event":"submitLoginFlow.passwordVisible","data":{"url":"https://x.com/i/jf/onboarding/web?mode=login"}}
 {"ts":1785097235946,"session":"x-login-not-typing","event":"submitLoginFlow.passwordPrimaryFailed","data":{"message":"Node is detached from document"}}
 {"ts":1785097249518,"session":"x-login-not-typing","event":"submitLoginFlow.success","data":{"url":"https://x.com/home"}}
+{"ts":1785107945912,"session":"x-login-not-typing","event":"loginToX.start","data":{"userId":"5987962713"}}
+{"ts":1785108047946,"session":"x-login-not-typing","event":"loginToX.start","data":{"userId":"5987962713"}}
+{"ts":1785108049873,"session":"x-login-not-typing","event":"loginToX.step","data":{"name":"checkExistingSession"}}
+{"ts":1785108049880,"session":"x-login-not-typing","event":"loginToX.step","data":{"name":"tryCookieLogin"}}
+{"ts":1785108049888,"session":"x-login-not-typing","event":"loginToX.hasCreds","data":{"hasCreds":true}}
+{"ts":1785108049901,"session":"x-login-not-typing","event":"submitLoginFlow.start","data":{"url":"about:blank","hasEmail":true,"hasUsername":false,"hasPassword":true}}
+{"ts":1785108085722,"session":"x-login-not-typing","event":"submitLoginFlow.afterGoto","data":{"url":"https://x.com/?logout=1785108082727","loginIdLen":9}}
+{"ts":1785108085734,"session":"x-login-not-typing","event":"loginToX.submitLoginFlowError","data":{"message":"Attempted to use detached Frame '8EA45DD15CEBAACB8D4EED10A8F7ECD2'."}}
+{"ts":1785108088362,"session":"x-login-not-typing","event":"loginToX.start","data":{"userId":"5987962713"}}
+{"ts":1785108092660,"session":"x-login-not-typing","event":"loginToX.start","data":{"userId":"5987962713"}}
+{"ts":1785108556581,"session":"x-login-not-typing","event":"loginToX.start","data":{"userId":"5987962713"}}
+{"ts":1785108558704,"session":"x-login-not-typing","event":"loginToX.step","data":{"name":"checkExistingSession"}}
+{"ts":1785108558710,"session":"x-login-not-typing","event":"loginToX.step","data":{"name":"tryCookieLogin"}}
+{"ts":1785108558715,"session":"x-login-not-typing","event":"loginToX.hasCreds","data":{"hasCreds":true}}
+{"ts":1785108558722,"session":"x-login-not-typing","event":"submitLoginFlow.start","data":{"url":":","hasEmail":true,"hasUsername":false,"hasPassword":true}}
+{"ts":1785108569513,"session":"x-login-not-typing","event":"submitLoginFlow.afterGoto","data":{"url":"https://x.com/i/jf/onboarding/web?mode=login","loginIdLen":9}}
+{"ts":1785108573821,"session":"x-login-not-typing","event":"submitLoginFlow.userStep","data":{"mode":"username_or_email","clicked":true}}
+{"ts":1785108573841,"session":"x-login-not-typing","event":"submitLoginFlow.afterContinue","data":{"url":"https://x.com/i/jf/onboarding/web?mode=login","stepReached":"password"}}
+{"ts":1785108573852,"session":"x-login-not-typing","event":"submitLoginFlow.passwordVisible","data":{"url":"https://x.com/i/jf/onboarding/web?mode=login"}}
+{"ts":1785108576193,"session":"x-login-not-typing","event":"submitLoginFlow.passwordPrimaryFailed","data":{"message":"Node is detached from document"}}
+{"ts":1785108598273,"session":"x-login-not-typing","event":"submitLoginFlow.success","data":{"url":"https://x.com/home"}}
+{"ts":1785108679509,"session":"x-login-not-typing","event":"loginToX.start","data":{"userId":"5987962713"}}
+{"ts":1785108680577,"session":"x-login-not-typing","event":"loginToX.step","data":{"name":"checkExistingSession"}}
+{"ts":1785108680583,"session":"x-login-not-typing","event":"loginToX.step","data":{"name":"tryCookieLogin"}}
+{"ts":1785108680590,"session":"x-login-not-typing","event":"loginToX.hasCreds","data":{"hasCreds":true}}
+{"ts":1785108680596,"session":"x-login-not-typing","event":"submitLoginFlow.start","data":{"url":"about:blank","hasEmail":true,"hasUsername":false,"hasPassword":true}}
+{"ts":1785108693336,"session":"x-login-not-typing","event":"submitLoginFlow.afterGoto","data":{"url":"https://x.com/?logout=1785108691124","loginIdLen":9}}
+{"ts":1785108693344,"session":"x-login-not-typing","event":"loginToX.submitLoginFlowError","data":{"message":"Attempted to use detached Frame 'BA8896775DD42DAB5C511EDFFC5B18D2'."}}
+{"ts":1785108752350,"session":"x-login-not-typing","event":"loginToX.start","data":{"userId":"5987962713"}}
+{"ts":1785108753790,"session":"x-login-not-typing","event":"loginToX.step","data":{"name":"checkExistingSession"}}
+{"ts":1785108753819,"session":"x-login-not-typing","event":"loginToX.step","data":{"name":"tryCookieLogin"}}
+{"ts":1785108753835,"session":"x-login-not-typing","event":"loginToX.hasCreds","data":{"hasCreds":true}}
+{"ts":1785108753854,"session":"x-login-not-typing","event":"submitLoginFlow.start","data":{"url":"about:blank","hasEmail":true,"hasUsername":false,"hasPassword":true}}
+{"ts":1785108760587,"session":"x-login-not-typing","event":"submitLoginFlow.afterGoto","data":{"url":"https://x.com/i/jf/onboarding/web?mode=login","loginIdLen":9}}
+{"ts":1785108766306,"session":"x-login-not-typing","event":"submitLoginFlow.userStep","data":{"mode":"username_or_email","clicked":true}}
+{"ts":1785108766319,"session":"x-login-not-typing","event":"submitLoginFlow.afterContinue","data":{"url":"https://x.com/i/jf/onboarding/web?mode=login","stepReached":"password"}}
+{"ts":1785108766328,"session":"x-login-not-typing","event":"submitLoginFlow.passwordVisible","data":{"url":"https://x.com/i/jf/onboarding/web?mode=login"}}
+{"ts":1785108768770,"session":"x-login-not-typing","event":"submitLoginFlow.passwordPrimaryFailed","data":{"message":"Node is detached from document"}}
+{"ts":1785108772571,"session":"x-login-not-typing","event":"loginToX.submitLoginFlowError","data":{"message":"Protocol error (Runtime.callFunctionOn): Argument should belong to the same JavaScript world as target object"}}

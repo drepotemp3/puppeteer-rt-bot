@@ -149,6 +149,18 @@ async function resolvePreferredUserAgent(targetPage) {
   return null;
 }
 
+function isBrowserConnected(targetBrowser) {
+  try {
+    if (!targetBrowser) return false;
+    if (typeof targetBrowser.isConnected === 'function') {
+      return Boolean(targetBrowser.isConnected());
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 function getAuthStateDir() {
   const configured = process.env.AUTH_STATE_DIR || process.env.X_AUTH_STATE_DIR;
   if (configured && String(configured).trim()) {
@@ -182,9 +194,30 @@ async function loadAuthState() {
   const p = await getPage();
   if (!p || p.isClosed()) throw new Error('No active browser page');
   const dir = getAuthStateDir();
-  const cookiesRaw = await readFile(path.join(dir, 'cookies.json'), 'utf8');
-  const sessionStorageRaw = await readFile(path.join(dir, 'sessionStorage.json'), 'utf8');
-  const localStorageRaw = await readFile(path.join(dir, 'localStorage.json'), 'utf8');
+  const cookiesPath = path.join(dir, 'cookies.json');
+  const sessionStoragePath = path.join(dir, 'sessionStorage.json');
+  const localStoragePath = path.join(dir, 'localStorage.json');
+
+  const cookiesRaw = await readFile(cookiesPath, 'utf8').catch((e) => {
+    if (e?.code === 'ENOENT') return null;
+    throw e;
+  });
+  const sessionStorageRaw = await readFile(sessionStoragePath, 'utf8').catch((e) => {
+    if (e?.code === 'ENOENT') return null;
+    throw e;
+  });
+  const localStorageRaw = await readFile(localStoragePath, 'utf8').catch((e) => {
+    if (e?.code === 'ENOENT') return null;
+    throw e;
+  });
+
+  const missing = [];
+  if (cookiesRaw == null) missing.push('cookies.json');
+  if (sessionStorageRaw == null) missing.push('sessionStorage.json');
+  if (localStorageRaw == null) missing.push('localStorage.json');
+  if (missing.length) {
+    throw new Error(`Auth state not found (${missing.join(', ')}). Click "💾 Export Auth" after you log in to generate it. Dir: ${dir}`);
+  }
   const cookies = JSON.parse(cookiesRaw || '[]');
   const sessionStorage = JSON.parse(sessionStorageRaw || '{}');
   const localStorage = JSON.parse(localStorageRaw || '{}');
@@ -286,7 +319,18 @@ async function isLoggedInPage(targetPage) {
 async function findLoggedInPage() {
   if (!browser) return null;
 
-  const openPages = await browser.pages();
+  let openPages = [];
+  try {
+    openPages = await browser.pages();
+  } catch (e) {
+    if (isDetachedContextError(e)) {
+      browser = null;
+      page = null;
+      isLoggedInGlobal = false;
+      return null;
+    }
+    throw e;
+  }
   for (const candidatePage of openPages) {
     if (!candidatePage || candidatePage.isClosed()) continue;
     if (await isLoggedInPage(candidatePage)) {
@@ -727,6 +771,11 @@ async function submitLoginFlow(targetPage, botUser) {
 }
 
 async function getBrowser() {
+  if (browser && !isBrowserConnected(browser)) {
+    browser = null;
+    page = null;
+    isLoggedInGlobal = false;
+  }
   if (browser) return browser;
   if (browserConnecting) {
     await new Promise(resolve => {
@@ -737,7 +786,11 @@ async function getBrowser() {
         }
       }, 100);
     });
-    return browser;
+    if (browser && isBrowserConnected(browser)) return browser;
+    browser = null;
+    page = null;
+    isLoggedInGlobal = false;
+    return await getBrowser();
   }
 
   browserConnecting = true;
@@ -916,6 +969,25 @@ async function getBrowser() {
 
     browser = realBrowser;
     page = realPage;
+
+    const assignedBrowser = browser;
+    const assignedPage = page;
+
+    try {
+      assignedBrowser.once('disconnected', () => {
+        if (browser !== assignedBrowser) return;
+        browser = null;
+        page = null;
+        isLoggedInGlobal = false;
+      });
+    } catch (e) {}
+
+    try {
+      assignedPage?.once?.('close', () => {
+        if (page !== assignedPage) return;
+        page = null;
+      });
+    } catch (e) {}
     
     await preparePage(page);
     
@@ -927,7 +999,7 @@ async function getBrowser() {
 }
 
 async function getPage() {
-  if (!browser) await getBrowser();
+  if (!browser || !isBrowserConnected(browser)) await getBrowser();
   return page;
 }
 
@@ -941,9 +1013,12 @@ async function getCursor(targetPage = page) {
 async function closeBrowser() {
   if (!browser) return;
   console.log('Closing browser...');
-  await browser.close();
+  const toClose = browser;
   browser = null;
   page = null;
+  try {
+    await toClose.close();
+  } catch (e) {}
 }
 
 function resetRuntimeSessionState() {
@@ -1039,6 +1114,7 @@ function isDetachedContextError(err) {
   return (
     msg.includes('detached frame')
     || msg.includes('target closed')
+    || msg.includes('connection closed')
     || msg.includes('execution context was destroyed')
     || msg.includes('session closed')
     || msg.includes('protocol error')
@@ -1048,10 +1124,22 @@ function isDetachedContextError(err) {
 async function ensureUsablePage(currentPage) {
   await getBrowser();
   let p = currentPage;
-  if (!p || p.isClosed()) {
-    p = await browser.newPage();
-    await preparePage(p);
+
+  const createFreshPage = async () => {
+    const created = await browser.newPage();
+    await preparePage(created);
+    page = created;
+    return created;
+  };
+
+  try {
+    if (!p || p.isClosed()) {
+      return await createFreshPage();
+    }
+  } catch (e) {
+    if (!isDetachedContextError(e)) throw e;
   }
+
   try {
     await p.evaluate(() => 1);
     return p;
@@ -1062,9 +1150,16 @@ async function ensureUsablePage(currentPage) {
   try {
     await p.close().catch(() => {});
   } catch (e) {}
-  p = await browser.newPage();
-  await preparePage(p);
-  return p;
+
+  try {
+    return await createFreshPage();
+  } catch (e) {
+    if (!isDetachedContextError(e)) throw e;
+  }
+
+  await resetBrowserSession().catch(() => {});
+  await getBrowser();
+  return await createFreshPage();
 }
 
 async function loginToX(userId) {
@@ -1193,6 +1288,11 @@ async function loginToX(userId) {
       const maxChecks = 600; // ~10 minutes
       
       while (checkCount < maxChecks && !isLoggedInGlobal) {
+        if (!browser || !isBrowserConnected(browser)) {
+          isLoggedInGlobal = false;
+          console.error('❌ Browser window was closed. Press Login again to relaunch.');
+          return false;
+        }
         await sleep(1000);
         checkCount++;
         const newLoggedInPage = await findLoggedInPage();
