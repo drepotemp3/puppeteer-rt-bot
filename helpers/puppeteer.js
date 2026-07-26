@@ -730,31 +730,54 @@ async function getBrowser() {
     let realBrowser;
     let realPage;
 
-    const connectPromise = connect({
-      headless: isHeadless,
-      disableXvfb,
-      args: launchArgs,
-      customConfig: {
-        userDataDir: userDataDir,
-        ...(chromePath && { chromePath })
-      },
-      turnstile: true,
-      connectOption: {
-        defaultViewport: null,
-        protocolTimeout: Number(process.env.PUPPETEER_PROTOCOL_TIMEOUT_MS || 120000)
+    const useConnect = isHeadless;
+
+    async function cleanupProfileSingletonFiles() {
+      if (process.platform !== 'linux') return;
+      const targets = [
+        path.join(userDataDir, 'SingletonLock'),
+        path.join(userDataDir, 'SingletonSocket'),
+        path.join(userDataDir, 'SingletonCookie'),
+      ];
+      for (const file of targets) {
+        try {
+          await fs.unlink(file);
+        } catch (e) {}
       }
-    });
+    }
 
     try {
-      const connected = await Promise.race([
-        connectPromise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Browser connect timeout')), 45000))
-      ]);
-      realBrowser = connected.browser;
-      realPage = connected.page;
+      if (useConnect) {
+        const connectPromise = connect({
+          headless: isHeadless,
+          disableXvfb,
+          args: launchArgs,
+          customConfig: {
+            userDataDir: userDataDir,
+            ...(chromePath && { chromePath })
+          },
+          turnstile: true,
+          connectOption: {
+            defaultViewport: null,
+            protocolTimeout: Number(process.env.PUPPETEER_PROTOCOL_TIMEOUT_MS || 120000)
+          }
+        });
+
+        const connected = await Promise.race([
+          connectPromise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Browser connect timeout')), 45000))
+        ]);
+        realBrowser = connected.browser;
+        realPage = connected.page;
+      } else {
+        throw new Error('skip connect (headful linux)');
+      }
     } catch (err) {
-      console.error(`Browser connect failed: ${err?.message || String(err)} — falling back to puppeteer.launch`);
+      if (useConnect) {
+        console.error(`Browser connect failed: ${err?.message || String(err)} — falling back to puppeteer.launch`);
+      }
       try {
+        await cleanupProfileSingletonFiles();
         realBrowser = await Promise.race([
           puppeteer.launch({
             headless: isHeadless,
@@ -768,8 +791,31 @@ async function getBrowser() {
           new Promise((_, reject) => setTimeout(() => reject(new Error('puppeteer.launch timeout')), 45000))
         ]);
       } catch (launchErr) {
-        console.error(`puppeteer.launch failed: ${launchErr?.message || String(launchErr)}`);
-        throw launchErr;
+        const msg = String(launchErr?.message || launchErr || '');
+        const looksLikeSingleton = msg.includes('SingletonLock') || msg.includes('already running');
+        if (looksLikeSingleton) {
+          await cleanupProfileSingletonFiles();
+          try {
+            realBrowser = await Promise.race([
+              puppeteer.launch({
+                headless: isHeadless,
+                executablePath: chromePath,
+                userDataDir,
+                args: launchArgs,
+                defaultViewport: null,
+                env: { ...process.env, ...(process.env.DISPLAY ? { DISPLAY: process.env.DISPLAY } : {}) },
+                dumpio: String(process.env.PUPPETEER_DUMPIO || '').trim().toLowerCase() === 'true'
+              }),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('puppeteer.launch timeout')), 45000))
+            ]);
+          } catch (retryErr) {
+            console.error(`puppeteer.launch failed: ${retryErr?.message || String(retryErr)}`);
+            throw retryErr;
+          }
+        } else {
+          console.error(`puppeteer.launch failed: ${launchErr?.message || String(launchErr)}`);
+          throw launchErr;
+        }
       }
 
       try {
