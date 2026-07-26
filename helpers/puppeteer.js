@@ -754,15 +754,31 @@ async function getBrowser() {
       realPage = connected.page;
     } catch (err) {
       console.error(`Browser connect failed: ${err?.message || String(err)} — falling back to puppeteer.launch`);
-      realBrowser = await puppeteer.launch({
-        headless: isHeadless,
-        executablePath: chromePath,
-        userDataDir,
-        args: launchArgs,
-        defaultViewport: null
-      });
-      const pages = await realBrowser.pages().catch(() => []);
-      realPage = pages && pages[0] ? pages[0] : await realBrowser.newPage();
+      try {
+        realBrowser = await Promise.race([
+          puppeteer.launch({
+            headless: isHeadless,
+            executablePath: chromePath,
+            userDataDir,
+            args: launchArgs,
+            defaultViewport: null,
+            env: { ...process.env, ...(process.env.DISPLAY ? { DISPLAY: process.env.DISPLAY } : {}) },
+            dumpio: String(process.env.PUPPETEER_DUMPIO || '').trim().toLowerCase() === 'true'
+          }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('puppeteer.launch timeout')), 45000))
+        ]);
+      } catch (launchErr) {
+        console.error(`puppeteer.launch failed: ${launchErr?.message || String(launchErr)}`);
+        throw launchErr;
+      }
+
+      try {
+        const pages = await realBrowser.pages().catch(() => []);
+        realPage = pages && pages[0] ? pages[0] : await realBrowser.newPage();
+      } catch (pageErr) {
+        console.error(`Failed to create initial page: ${pageErr?.message || String(pageErr)}`);
+        throw pageErr;
+      }
     }
 
     browser = realBrowser;
