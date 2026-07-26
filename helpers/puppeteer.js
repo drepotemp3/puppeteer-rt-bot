@@ -16,6 +16,18 @@ let stopRequested = false;
 const LOGIN_BLOCK_ERROR_TEXT = 'Please use X.com or official X apps to proceed with log in/sign up.';
 const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36';
 
+// #region debug-point x-login-not-typing-client
+async function dbg(event, data = {}) {
+  try {
+    await fetch('http://127.0.0.1:3000/__debug', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ session: 'x-login-not-typing', event, data })
+    });
+  } catch (e) {}
+}
+// #endregion debug-point x-login-not-typing-client
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -63,6 +75,28 @@ function getUserDataDir() {
   return process.env.CHROME_USER_DATA_DIR
     || process.env.BROWSER_PROFILE_DIR
     || path.join(os.homedir(), '.retweet-bot-chrome-profile');
+}
+
+function shouldRunHeadless() {
+  const raw = process.env.HEADLESS;
+  if (raw != null && String(raw).trim() !== '') {
+    const value = String(raw).trim().toLowerCase();
+    return value === 'true' || value === '1' || value === 'yes';
+  }
+
+  const vpsRaw = process.env.VPS ?? process.env.IS_VPS ?? process.env.DEPLOY_TARGET;
+  if (vpsRaw != null && String(vpsRaw).trim() !== '') {
+    const value = String(vpsRaw).trim().toLowerCase();
+    if (value === 'true' || value === '1' || value === 'yes' || value === 'vps' || value === 'server') {
+      return true;
+    }
+  }
+
+  if (process.platform !== 'win32' && !process.env.DISPLAY) {
+    return true;
+  }
+
+  return false;
 }
 
 function findExistingPath(paths) {
@@ -226,6 +260,54 @@ async function waitForPageToSettle(targetPage, minimumDelayMs = 3000) {
   await sleep(randomBetween(1200, 3200));
 }
 
+async function waitForPageToSettleFast(targetPage) {
+  try {
+    await targetPage.waitForFunction(
+      () => document.readyState === 'complete',
+      { timeout: 15000 }
+    );
+  } catch (error) {}
+}
+
+async function fastTypeInput(targetPage, selector, value) {
+  await targetPage.waitForSelector(selector, { visible: true, timeout: 20000 });
+  try {
+    await targetPage.click(selector, { clickCount: 3 });
+  } catch (e) {}
+  const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+  await targetPage.keyboard.down(modifier);
+  await targetPage.keyboard.press('KeyA');
+  await targetPage.keyboard.up(modifier);
+  await targetPage.keyboard.press('Backspace');
+  await targetPage.type(selector, String(value || ''), { delay: 0 });
+}
+
+async function clickSubmitButtonFast(targetPage, keywords) {
+  const buttons = await targetPage.$$('button[type="submit"]');
+  for (const button of buttons) {
+    const ok = await button
+      .evaluate((el, words) => {
+        const text = (el.textContent || '').toLowerCase();
+        if (!words.some(w => text.includes(w))) return false;
+        const ariaDisabled = el.getAttribute('aria-disabled');
+        const isDisabled = Boolean(el.disabled) || ariaDisabled === 'true';
+        if (isDisabled) return false;
+        const rect = el.getBoundingClientRect();
+        if (!rect || rect.width < 6 || rect.height < 6) return false;
+        const style = window.getComputedStyle(el);
+        if (style && (style.visibility === 'hidden' || style.display === 'none' || Number(style.opacity || '1') === 0)) return false;
+        return true;
+      }, keywords)
+      .catch(() => false);
+    if (!ok) continue;
+    try {
+      await button.click();
+      return true;
+    } catch (e) {}
+  }
+  return false;
+}
+
 async function moveMouseToElement(targetPage, selector) {
   const element = await targetPage.$(selector);
   if (!element) return false;
@@ -350,6 +432,52 @@ async function humanType(targetPage, selector, value) {
   await sleep(randomBetween(400, 1400));
 }
 
+async function humanTypeQuick(targetPage, selector, value) {
+  await focusInput(targetPage, selector);
+  await clearFocusedInput(targetPage);
+  await sleep(randomBetween(30, 90));
+  await targetPage.type(selector, String(value || ''), { delay: randomBetween(12, 28) });
+  await sleep(randomBetween(60, 180));
+}
+
+async function clickSubmitNearInput(targetPage, inputSelector, keywords) {
+  await targetPage.waitForSelector(inputSelector, { visible: true, timeout: 20000 });
+  const input = await targetPage.$(inputSelector);
+  if (!input) return false;
+  const clicked = await input
+    .evaluate((el, words) => {
+      const root = el.closest('form') || el.closest('[role="dialog"]') || document;
+      const candidates = Array.from(root.querySelectorAll('button[type="submit"]'))
+        .map((btn) => {
+          const text = (btn.textContent || '').toLowerCase();
+          const okText = words.some((w) => text.includes(w));
+          if (!okText) return null;
+          const ariaDisabled = btn.getAttribute('aria-disabled');
+          const isDisabled = Boolean(btn.disabled) || ariaDisabled === 'true';
+          if (isDisabled) return null;
+          const rect = btn.getBoundingClientRect();
+          if (!rect || rect.width < 6 || rect.height < 6) return null;
+          const style = window.getComputedStyle(btn);
+          if (style && (style.visibility === 'hidden' || style.display === 'none' || Number(style.opacity || '1') === 0)) return null;
+          return btn;
+        })
+        .filter(Boolean);
+      if (candidates.length === 0) return false;
+      let best = null;
+      for (const btn of candidates) {
+        const pos = el.compareDocumentPosition(btn);
+        if (pos & Node.DOCUMENT_POSITION_FOLLOWING) {
+          best = btn;
+          break;
+        }
+      }
+      (best || candidates[0]).click();
+      return true;
+    }, keywords)
+    .catch(() => false);
+  return Boolean(clicked);
+}
+
 async function clickSubmitButton(targetPage, keywords) {
   const buttons = await targetPage.$$('button[type="submit"]');
   for (const button of buttons) {
@@ -400,35 +528,11 @@ async function navigateByTypingUrl(targetPage, url) {
 }
 
 async function manualNewTabRetry(originalPage, botUser) {
-  const viewport = await originalPage.viewport();
-  const width = viewport?.width || 1920;
-  const height = viewport?.height || 1080;
-
-  const currentMousePos = {
-    x: Math.min(width / 2, width * 0.6),
-    y: Math.min(height / 2, height * 0.45)
-  };
-  await moveMouseSmoothly(originalPage, currentMousePos.x, currentMousePos.y);
-  await sleep(randomBetween(300, 800));
-
-  const newTabAreaX = width * 0.8;
-  const newTabAreaY = 30;
-  await moveMouseSmoothly(originalPage, newTabAreaX, newTabAreaY);
-  await sleep(randomBetween(400, 900));
-  await originalPage.mouse.click(newTabAreaX, newTabAreaY, { delay: randomBetween(80, 220) });
-  await sleep(randomBetween(600, 1400));
-
   const retryPage = await browser.newPage();
   await preparePage(retryPage);
   await retryPage.bringToFront();
-  await sleep(randomBetween(800, 1800));
-
-  const backToMiddleX = width * 0.5;
-  const backToMiddleY = height * 0.55;
-  await moveMouseSmoothly(retryPage, backToMiddleX, backToMiddleY);
-  await sleep(randomBetween(400, 1000));
-
-  await navigateByTypingUrl(retryPage, 'x.com');
+  await retryPage.goto('https://x.com/login', { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await waitForPageToSettle(retryPage, 2000);
 
   return await submitLoginFlow(retryPage, botUser);
 }
@@ -449,17 +553,19 @@ async function hasLoginBlockError(targetPage) {
 }
 
 async function submitLoginFlow(targetPage, botUser) {
+  await dbg('submitLoginFlow.start', {
+    url: (() => { try { return targetPage.url(); } catch (e) { return null; } })(),
+    hasEmail: Boolean(botUser?.xEmail),
+    hasUsername: Boolean(botUser?.xUsername),
+    hasPassword: Boolean(botUser?.xPassword)
+  });
   await targetPage.bringToFront();
-  await sleep(randomBetween(500, 1500));
-  await targetPage.goto('https://x.com/i/jf/onboarding/web#/s/login_enter_password/r-zb1cp', { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await waitForPageToSettle(targetPage, 3500);
-
-  // Skip early session check here because we WANT to manually log in
-  // even if there are some logged-in indicators visible on this popup page!
+  await targetPage.goto('https://x.com/login', { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await waitForPageToSettle(targetPage, 2000);
 
   let hasEmailInput = false;
   try {
-    await targetPage.waitForSelector('input[name="username_or_email"]', { visible: true, timeout: 20000 });
+    await targetPage.waitForSelector('input[name="text"], input[name="username_or_email"], input[type="email"]', { visible: true, timeout: 20000 });
     hasEmailInput = true;
   } catch (error) {}
 
@@ -469,33 +575,75 @@ async function submitLoginFlow(targetPage, botUser) {
     } catch (err) {}
   }
 
-  await humanType(targetPage, 'input[name="username_or_email"]', botUser.xEmail);
-  await clickSubmitButton(targetPage, ['continue', 'next']);
-  await waitForPageToSettle(targetPage, 2500);
+  const loginId = botUser.xEmail || botUser.xUsername;
+  await dbg('submitLoginFlow.afterGoto', {
+    url: (() => { try { return targetPage.url(); } catch (e) { return null; } })(),
+    loginIdLen: String(loginId || '').length
+  });
+  const hasUsernameOrEmail = await targetPage.$('input[name="username_or_email"]');
+  const hasTextInput = await targetPage.$('input[name="text"]');
+  if (hasUsernameOrEmail) {
+    await humanTypeQuick(targetPage, 'input[name="username_or_email"]', loginId);
+    const clicked = await clickSubmitNearInput(targetPage, 'input[name="username_or_email"]', ['continue', 'next']);
+    await dbg('submitLoginFlow.userStep', { mode: 'username_or_email', clicked });
+    if (!clicked) await targetPage.keyboard.press('Enter');
+  } else if (hasTextInput) {
+    await humanTypeQuick(targetPage, 'input[name="text"]', loginId);
+    const clicked = await clickSubmitNearInput(targetPage, 'input[name="text"]', ['continue', 'next']);
+    await dbg('submitLoginFlow.userStep', { mode: 'text', clicked });
+    if (!clicked) await targetPage.keyboard.press('Enter');
+  } else {
+    await humanTypeQuick(targetPage, 'input[type="email"]', loginId);
+    const clicked = await clickSubmitNearInput(targetPage, 'input[type="email"]', ['continue', 'next']);
+    await dbg('submitLoginFlow.userStep', { mode: 'email', clicked });
+    if (!clicked) await targetPage.keyboard.press('Enter');
+  }
+
+  const stepReached = await Promise.race([
+    targetPage
+      .waitForSelector('input[name="password"]', { visible: true, timeout: 12000 })
+      .then(() => 'password')
+      .catch(() => null),
+    targetPage
+      .waitForSelector('input[name="username"]', { visible: true, timeout: 12000 })
+      .then(() => 'username')
+      .catch(() => null),
+  ]);
+  await dbg('submitLoginFlow.afterContinue', {
+    url: (() => { try { return targetPage.url(); } catch (e) { return null; } })(),
+    stepReached: stepReached || null
+  });
 
   try {
     await targetPage.waitForSelector('input[name="password"]', { visible: true, timeout: 20000 });
-    await humanType(targetPage, 'input[name="password"]', botUser.xPassword);
-    await clickSubmitButton(targetPage, ['log', 'sign', 'continue']);
+    await dbg('submitLoginFlow.passwordVisible', { url: (() => { try { return targetPage.url(); } catch (e) { return null; } })() });
+    await humanTypeQuick(targetPage, 'input[name="password"]', botUser.xPassword);
+    await targetPage.keyboard.press('Enter');
+    await clickSubmitNearInput(targetPage, 'input[name="password"]', ['continue', 'log', 'sign']);
   } catch (error) {
+    await dbg('submitLoginFlow.passwordPrimaryFailed', { message: String(error?.message || error) });
     await targetPage.waitForSelector('input[name="username"]', { timeout: 5000 });
-    await humanType(targetPage, 'input[name="username"]', botUser.xUsername || botUser.xEmail);
+    await humanTypeQuick(targetPage, 'input[name="username"]', botUser.xUsername || botUser.xEmail);
     await targetPage.waitForSelector('input[name="password"]', { timeout: 10000 });
-    await humanType(targetPage, 'input[name="password"]', botUser.xPassword);
-    await clickSubmitButton(targetPage, ['log', 'sign', 'continue']);
+    await humanTypeQuick(targetPage, 'input[name="password"]', botUser.xPassword);
+    await targetPage.keyboard.press('Enter');
+    await clickSubmitNearInput(targetPage, 'input[name="password"]', ['continue', 'log', 'sign']);
   }
 
-  await waitForPageToSettle(targetPage, 4500);
+  await waitForPageToSettle(targetPage, 2200);
   const blocked = await hasLoginBlockError(targetPage);
   if (blocked) {
+    await dbg('submitLoginFlow.blocked', { url: (() => { try { return targetPage.url(); } catch (e) { return null; } })() });
     return { loggedIn: false, blocked: true, source: 'x-block-error' };
   }
 
   const loggedInPage = await waitForLoggedInPage(20000);
   if (loggedInPage) {
+    await dbg('submitLoginFlow.success', { url: (() => { try { return loggedInPage.url(); } catch (e) { return null; } })() });
     return { loggedIn: true, blocked: false, source: 'post-submit-detection', page: loggedInPage };
   }
 
+  await dbg('submitLoginFlow.notDetected', { url: (() => { try { return targetPage.url(); } catch (e) { return null; } })() });
   return { loggedIn: false, blocked: false, source: 'login-not-detected' };
 }
 
@@ -515,7 +663,7 @@ async function getBrowser() {
 
   browserConnecting = true;
   try {
-    const isHeadless = process.env.HEADLESS === 'true';
+    const isHeadless = shouldRunHeadless();
     const userDataDir = getUserDataDir();
     
     // Create profile dir if not exists
@@ -716,7 +864,41 @@ async function tryCookieLogin(targetPage) {
   }
 }
 
+function isDetachedContextError(err) {
+  const msg = String(err?.message || err || '').toLowerCase();
+  return (
+    msg.includes('detached frame')
+    || msg.includes('target closed')
+    || msg.includes('execution context was destroyed')
+    || msg.includes('session closed')
+    || msg.includes('protocol error')
+  );
+}
+
+async function ensureUsablePage(currentPage) {
+  await getBrowser();
+  let p = currentPage;
+  if (!p || p.isClosed()) {
+    p = await browser.newPage();
+    await preparePage(p);
+  }
+  try {
+    await p.evaluate(() => 1);
+    return p;
+  } catch (e) {
+    if (!isDetachedContextError(e)) throw e;
+  }
+
+  try {
+    await p.close().catch(() => {});
+  } catch (e) {}
+  p = await browser.newPage();
+  await preparePage(p);
+  return p;
+}
+
 async function loginToX(userId) {
+  await dbg('loginToX.start', { userId: userId != null ? String(userId) : null });
   if (isLoggedInGlobal) {
     processQueue();
     return true;
@@ -734,10 +916,11 @@ async function loginToX(userId) {
     botUser = await BotUser.findOne({});
   }
 
-  const p = await getPage();
+  let p = await ensureUsablePage(await getPage());
   
   try {
     console.log('🔍 Checking for existing logged-in session...');
+    await dbg('loginToX.step', { name: 'checkExistingSession' });
     let existingLoggedInPage = await findLoggedInPage();
     if (existingLoggedInPage) {
       page = existingLoggedInPage;
@@ -752,6 +935,7 @@ async function loginToX(userId) {
       return true;
     }
 
+    await dbg('loginToX.step', { name: 'tryCookieLogin' });
     const cookieLogin = await tryCookieLogin(p);
     if (cookieLogin.success) {
       page = cookieLogin.page;
@@ -766,11 +950,49 @@ async function loginToX(userId) {
       return true;
     }
 
+    const hasCreds = Boolean(botUser?.xPassword && (botUser?.xEmail || botUser?.xUsername));
+    await dbg('loginToX.hasCreds', { hasCreds });
+    if (hasCreds) {
+      console.log('🔐 No session/cookies found. Trying automated credential login...');
+
+      let attempt = null;
+      try {
+        p = await ensureUsablePage(p);
+        attempt = await submitLoginFlow(p, botUser);
+      } catch (e) {
+        await dbg('loginToX.submitLoginFlowError', { message: String(e?.message || e) });
+        attempt = null;
+      }
+
+      if (!attempt || !attempt.loggedIn) {
+        attempt = attempt || null;
+      }
+
+      if (attempt?.loggedIn) {
+        page = attempt.page || (await findLoggedInPage());
+        isLoggedInGlobal = true;
+        if (botUser) {
+          botUser.isLoggedIn = true;
+          botUser.lastLoginAt = new Date();
+          await botUser.save().catch(() => {});
+        }
+        console.log('✅ Logged in via automated credentials!');
+        processQueue();
+        return true;
+      }
+
+      if (attempt?.blocked) {
+        console.error('❌ X blocked automated login flow.');
+        return false;
+      }
+    }
+
     // Check if we're in local development mode
     const isDevMode = process.env.NODE_ENV !== 'production' || !process.env.RENDER;
 
     if (isDevMode) {
       console.log('⚠️ No existing session found. Going to x.com to let you log in manually...');
+      p = await ensureUsablePage(p);
       await p.goto('https://x.com', { waitUntil: 'domcontentloaded', timeout: 60000 });
       await sleep(2000);
 
@@ -816,6 +1038,9 @@ async function loginToX(userId) {
     }
   } catch (err) {
     console.error('❌ Error checking login state:', err);
+    if (isDetachedContextError(err)) {
+      await resetBrowserSession().catch(() => {});
+    }
     return false;
   }
 }
@@ -1246,9 +1471,33 @@ function getQueueStatus() {
 }
 
 async function logout() {
-  await closeBrowser();
-  resetRuntimeSessionState();
-  console.log('Logged out (browser closed, profile preserved).');
+  try {
+    const p = await getPage().catch(() => null);
+    if (p && !p.isClosed()) {
+      try {
+        await p.goto('https://x.com', { waitUntil: 'domcontentloaded', timeout: 45000 });
+      } catch (e) {}
+
+      try {
+        const cookies = await p.cookies().catch(() => []);
+        if (Array.isArray(cookies) && cookies.length > 0) {
+          await p.deleteCookie(...cookies).catch(() => {});
+        }
+      } catch (e) {}
+
+      try {
+        const client = await p.target().createCDPSession();
+        const origins = ['https://x.com', 'https://twitter.com'];
+        for (const origin of origins) {
+          await client.send('Storage.clearDataForOrigin', { origin, storageTypes: 'all' }).catch(() => {});
+        }
+      } catch (e) {}
+    }
+  } finally {
+    await closeBrowser();
+    resetRuntimeSessionState();
+  }
+  console.log('Logged out (browser closed, X auth cleared from profile).');
 }
 
 function isLoggedIn() {

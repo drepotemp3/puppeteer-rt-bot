@@ -2,10 +2,11 @@ import { Markup } from 'telegraf';
 import { Admin, BotUser, ApprovedGroup } from '../models/db.js';
 import fs from 'fs';
 import path from 'path';
-import { loginToX, extractXPostId, stopQueue, getQueueStatus, logout, isLoggedIn, resetBrowserSession, processSingleRetweet, undoRepost, postWithGif } from '../helpers/puppeteer.js';
+import { loginToX, extractXPostId, logout, isLoggedIn, resetBrowserSession, processSingleRetweet, undoRepost, postWithGif } from '../helpers/puppeteer.js';
 
 const userStates = {};
 const groupSessions = {};
+const loginLocks = {};
 
 const QUOTES = [
   'Your limits are often just old stories waiting to be rewritten.',
@@ -346,16 +347,13 @@ async function isApprovedGroup(chatId) {
 }
 
 function mainMenuKeyboard() {
-  const queueStatus = getQueueStatus();
   const buttons = [
     [Markup.button.callback('⚙️ Bot Settings', 'menu_settings')],
-    [Markup.button.callback('🚀 Start Retweet', 'menu_start_retweet')],
   ];
-  if (queueStatus.isProcessing || queueStatus.queueLength > 0) {
-    buttons.push([Markup.button.callback('⏹️ Stop Retweet', 'menu_stop_retweet')]);
-  }
   if (isLoggedIn()) {
     buttons.push([Markup.button.callback('🚪 Logout', 'menu_logout')]);
+  } else {
+    buttons.push([Markup.button.callback('🔐 Login', 'menu_login')]);
   }
   buttons.push([Markup.button.callback('👥 Manage Admins', 'menu_admins')]);
   buttons.push([Markup.button.callback('👥 Manage Groups', 'menu_groups')]);
@@ -571,28 +569,62 @@ export function setupBot(bot) {
     await editOrReply(ctx, 'Credentials deleted. Browser profile preserved to avoid triggering X anti-bot checks.', mainMenuKeyboard());
   });
 
-  bot.action('menu_start_retweet', async (ctx) => {
+  bot.action('menu_login', async (ctx) => {
     await ctx.answerCbQuery().catch(() => {});
+    const lockKey = ctx.from?.id != null ? ctx.from.id.toString() : null;
+    if (lockKey && loginLocks[lockKey]) return;
+    if (lockKey) loginLocks[lockKey] = true;
+    let background = false;
     try {
-      await safeReply(ctx, 'Starting login...');
-      const loggedIn = await loginToX(ctx.from.id);
-      if (loggedIn) {
-        const queueStatus = getQueueStatus();
-        if (queueStatus.queueLength === 0) {
-          await safeReply(ctx, 'Logged in successfully! Waiting for links to retweet...');
+      if (isLoggedIn()) {
+        await safeReply(ctx, 'Already logged in.');
+        if (ctx.callbackQuery && ctx.callbackQuery.message) {
+          await ctx.editMessageText('Welcome to Retweet Bot!', mainMenuKeyboard()).catch(() => {});
         }
-      } else {
-        await safeReply(ctx, 'Login failed. Check credentials and try again.');
+        return;
       }
+
+      const chatId = ctx.chat?.id;
+      const messageId = ctx.callbackQuery?.message?.message_id;
+      if (ctx.callbackQuery && ctx.callbackQuery.message) {
+        await ctx.editMessageText('Logging in...', mainMenuKeyboard()).catch(() => {});
+      } else {
+        await safeReply(ctx, 'Logging in...');
+      }
+
+      background = true;
+      setImmediate(async () => {
+        let loggedIn = false;
+        try {
+          loggedIn = await loginToX(ctx.from.id);
+        } catch (e) {
+          loggedIn = false;
+        }
+
+        await BotUser.updateOne(
+          { userId: ctx.from.id.toString() },
+          {
+            $set: { isLoggedIn: Boolean(loggedIn), lastLoginAt: loggedIn ? new Date() : null },
+            $setOnInsert: { username: ctx.from.username || null }
+          },
+          { upsert: true }
+        ).catch(() => {});
+
+        try {
+          if (chatId && messageId) {
+            await bot.telegram.editMessageText(chatId, messageId, undefined, 'Welcome to Retweet Bot!', mainMenuKeyboard()).catch(() => {});
+          }
+        } finally {
+          if (lockKey) loginLocks[lockKey] = false;
+        }
+      });
+
+      return;
     } catch (err) {
       await safeReply(ctx, `Error: ${err.message}`);
+    } finally {
+      if (!background && lockKey) loginLocks[lockKey] = false;
     }
-  });
-
-  bot.action('menu_stop_retweet', async (ctx) => {
-    await ctx.answerCbQuery().catch(() => {});
-    stopQueue();
-    await safeReply(ctx, 'Retweet queue stopped!', mainMenuKeyboard());
   });
 
   bot.action('menu_logout', async (ctx) => {

@@ -1,0 +1,40 @@
+{"ts":1785076242920,"session":"x-login-not-typing","event":"loginToX.start","data":{"userId":"5987962713"}}
+{"ts":1785076275170,"session":"x-login-not-typing","event":"loginToX.start","data":{"userId":"5987962713"}}
+{"ts":1785076276149,"session":"x-login-not-typing","event":"submitLoginFlow.start","data":{"url":"about:blank","hasEmail":true,"hasUsername":false,"hasPassword":true}}
+{"ts":1785076283160,"session":"x-login-not-typing","event":"submitLoginFlow.afterGoto","data":{"url":"https://x.com/i/jf/onboarding/web?mode=login","loginIdLen":9}}
+{"ts":1785076283546,"session":"x-login-not-typing","event":"submitLoginFlow.userStep","data":{"mode":"username_or_email","clicked":true}}
+{"ts":1785076283569,"session":"x-login-not-typing","event":"submitLoginFlow.passwordVisible","data":{"url":"https://x.com/i/jf/onboarding/web?mode=login"}}
+{"ts":1785076304236,"session":"x-login-not-typing","event":"submitLoginFlow.notDetected","data":{"url":"https://x.com/i/jf/onboarding/web?mode=login"}}
+{"ts":1785076441900,"session":"x-login-not-typing","event":"loginToX.start","data":{"userId":"5987962713"}}
+{"ts":1785076442720,"session":"x-login-not-typing","event":"submitLoginFlow.start","data":{"url":"about:blank","hasEmail":true,"hasUsername":false,"hasPassword":true}}
+{"ts":1785076448952,"session":"x-login-not-typing","event":"submitLoginFlow.afterGoto","data":{"url":"https://x.com/i/jf/onboarding/web?mode=login","loginIdLen":9}}
+{"ts":1785076457791,"session":"x-login-not-typing","event":"loginToX.submitLoginFlowError","data":{"message":"Node is either not clickable or not an Element"}}
+{"ts":1785090137806,"session":"x-login-not-typing","event":"loginToX.start","data":{"userId":"5987962713"}}
+{"ts":1785090147978,"session":"x-login-not-typing","event":"loginToX.start","data":{"userId":"5987962713"}}
+{"ts":1785090149315,"session":"x-login-not-typing","event":"loginToX.step","data":{"name":"checkExistingSession"}}
+{"ts":1785090149341,"session":"x-login-not-typing","event":"loginToX.step","data":{"name":"tryCookieLogin"}}
+{"ts":1785090149346,"session":"x-login-not-typing","event":"loginToX.hasCreds","data":{"hasCreds":true}}
+{"ts":1785090149351,"session":"x-login-not-typing","event":"submitLoginFlow.start","data":{"url":":","hasEmail":true,"hasUsername":false,"hasPassword":true}}
+{"ts":1785090155834,"session":"x-login-not-typing","event":"submitLoginFlow.afterGoto","data":{"url":"https://x.com/i/jf/onboarding/web?mode=login","loginIdLen":9}}
+{"ts":1785090176753,"session":"x-login-not-typing","event":"loginToX.submitLoginFlowError","data":{"message":"Node is either not clickable or not an Element"}}
+{"ts":1785090384308,"session":"x-login-not-typing","event":"loginToX.start","data":{"userId":"5987962713"}}
+{"ts":1785090385633,"session":"x-login-not-typing","event":"loginToX.step","data":{"name":"checkExistingSession"}}
+{"ts":1785090385649,"session":"x-login-not-typing","event":"loginToX.step","data":{"name":"tryCookieLogin"}}
+{"ts":1785090385657,"session":"x-login-not-typing","event":"loginToX.hasCreds","data":{"hasCreds":true}}
+{"ts":1785090385670,"session":"x-login-not-typing","event":"submitLoginFlow.start","data":{"url":"about:blank","hasEmail":true,"hasUsername":false,"hasPassword":true}}
+{"ts":1785090394078,"session":"x-login-not-typing","event":"submitLoginFlow.afterGoto","data":{"url":"https://x.com/i/jf/onboarding/web?mode=login","loginIdLen":9}}
+{"ts":1785090398215,"session":"x-login-not-typing","event":"submitLoginFlow.userStep","data":{"mode":"username_or_email","clicked":true}}
+{"ts":1785090398637,"session":"x-login-not-typing","event":"submitLoginFlow.afterContinue","data":{"url":"https://x.com/i/jf/onboarding/web?mode=login","stepReached":"password"}}
+{"ts":1785090398648,"session":"x-login-not-typing","event":"submitLoginFlow.passwordVisible","data":{"url":"https://x.com/i/jf/onboarding/web?mode=login"}}
+{"ts":1785090430091,"session":"x-login-not-typing","event":"submitLoginFlow.notDetected","data":{"url":"https://x.com/i/jf/onboarding/web?mode=login"}}
+{"ts":1785090882174,"session":"x-login-not-typing","event":"loginToX.start","data":{"userId":"5987962713"}}
+{"ts":1785090883662,"session":"x-login-not-typing","event":"loginToX.step","data":{"name":"checkExistingSession"}}
+{"ts":1785090883670,"session":"x-login-not-typing","event":"loginToX.step","data":{"name":"tryCookieLogin"}}
+{"ts":1785090883680,"session":"x-login-not-typing","event":"loginToX.hasCreds","data":{"hasCreds":true}}
+{"ts":1785090883690,"session":"x-login-not-typing","event":"submitLoginFlow.start","data":{"url":"about:blank","hasEmail":true,"hasUsername":false,"hasPassword":true}}
+{"ts":1785090894011,"session":"x-login-not-typing","event":"submitLoginFlow.afterGoto","data":{"url":"https://x.com/i/jf/onboarding/web?mode=login","loginIdLen":9}}
+{"ts":1785090897587,"session":"x-login-not-typing","event":"submitLoginFlow.userStep","data":{"mode":"username_or_email","clicked":true}}
+{"ts":1785090897605,"session":"x-login-not-typing","event":"submitLoginFlow.afterContinue","data":{"url":"https://x.com/i/jf/onboarding/web?mode=login","stepReached":"password"}}
+{"ts":1785090897616,"session":"x-login-not-typing","event":"submitLoginFlow.passwordVisible","data":{"url":"https://x.com/i/jf/onboarding/web?mode=login"}}
+{"ts":1785090900472,"session":"x-login-not-typing","event":"submitLoginFlow.passwordPrimaryFailed","data":{"message":"Node is detached from document"}}
+{"ts":1785090916279,"session":"x-login-not-typing","event":"submitLoginFlow.success","data":{"url":"https://x.com/home"}}

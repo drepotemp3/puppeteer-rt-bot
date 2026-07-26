@@ -5,11 +5,27 @@ import { connectDB, Admin, BotUser } from './models/db.js';
 import { setupBot } from './bot/handlers.js';
 import launchBot from './bot/launchBot.js';
 import { loginToX } from './helpers/puppeteer.js';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const app = express();
 const bot = new Telegraf(process.env.BOT_TOKEN);
+app.use(express.json({ limit: '512kb' }));
 
 app.get('/ping', (req, res) => res.send('pong'));
+
+// #region debug-point x-login-not-typing-server
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const DEBUG_LOG_PATH = path.join(__dirname, 'trae-debug-log-x-login-not-typing.ndjson');
+app.post('/__debug', async (req, res) => {
+  try {
+    const line = JSON.stringify({ ts: Date.now(), ...req.body });
+    await fs.appendFile(DEBUG_LOG_PATH, `${line}\n`).catch(() => {});
+  } catch (e) {}
+  res.status(204).end();
+});
+// #endregion debug-point x-login-not-typing-server
 const PORT = Number(process.env.port || process.env.PORT || 3000);
 app.listen(PORT, () => {
   console.log(`✅ Server listening on port ${PORT}`);
@@ -38,30 +54,6 @@ async function seedAdmin() {
   }
 }
 
-async function autoLoginIfCredsExist() {
-  // Find any BotUser with X credentials
-  const userWithCreds = await BotUser.findOne({ 
-    xEmail: { $exists: true, $ne: null }, 
-    xPassword: { $exists: true, $ne: null } 
-  });
-  
-  if (userWithCreds) {
-    console.log('🔑 Found X credentials, attempting auto-login...');
-    try {
-      const loggedIn = await loginToX(userWithCreds.userId);
-      if (loggedIn) {
-        console.log('✅ Auto-login successful!');
-      } else {
-        console.log('⚠️ Auto-login failed, check credentials');
-      }
-    } catch (err) {
-      console.error('❌ Auto-login error:', err.message);
-    }
-  } else {
-    console.log('ℹ️ No X credentials found, skipping auto-login');
-  }
-}
-
 process.on('uncaughtException', (err) => {
   console.error('❌ Uncaught Exception:', err.message);
   console.error(err.stack);
@@ -75,9 +67,6 @@ await connectWithRetry();
 await seedAdmin();
 setupBot(bot);
 launchBot(bot);
-
-// Auto-login after bot is launched
-autoLoginIfCredsExist();
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
