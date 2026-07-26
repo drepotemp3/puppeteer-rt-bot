@@ -666,10 +666,13 @@ async function getBrowser() {
     
     const chromePath = await resolveChromePath();
 
+    const disableXvfb = !isHeadless && process.platform === 'linux' && Boolean(process.env.DISPLAY);
+    console.log(`Browser launch config: headless=${String(isHeadless)} display=${process.env.DISPLAY || ''} disableXvfb=${String(disableXvfb)}`);
+
     console.log('Launching browser...');
     const { browser: realBrowser, page: realPage } = await connect({
       headless: isHeadless,
-      disableXvfb: !isHeadless && process.platform === 'linux' && Boolean(process.env.DISPLAY),
+      disableXvfb,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
