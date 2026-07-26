@@ -1,0 +1,60 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Node modules and dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.swp
+*.swo
+*~
+
+# Browser/profile stuff
+.retweet-bot-chrome-profile/
+*.retweet-bot-chrome-profile/
+.cache/puppeteer/
+chrome-out.log
+chrome-err.log
+*.chrome-profile/
+chrome-data/
+
+# Test/temp files
+comment-rt-button.html
+comment.html
+find-chrome.js
+handoff.md
+main-tweet-rt-btn.html
+maintweet.html
+render-idea.txt
+tabs.html
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cache/
+profile-seed/**/Cache/
+profile-seed/**/cache/
+profile-seed/**/Code Cache/
+profile-seed/**/GPUCache/
+profile-seed/**/GrShaderCache/
+profile-seed/**/ShaderCache/
+profile-seed/**/Crashpad/
+profile-seed/**/Singleton*

@@ -1,0 +1,26 @@
+{
+  "type": "module",
+  "name": "RetweetBot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "upload":"node scripts/compose-upload-test.js",
+    "prestart": "npx puppeteer browsers install chrome",
+    "start": "node index.js",
+    "predev": "npx puppeteer browsers install chrome",
+    "dev": "node --watch index.js",
+    "login:local": "node scripts/launch-profile-browser.js",
+    "compose:upload:test": "node scripts/compose-upload-test.js",
+    "retweet:undo:test": "node scripts/undo-retweet-test.js",
+    "profile:copy-seed": "node scripts/copy-profile-to-seed.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.1",
+    "express": "^5.2.1",
+    "ghost-cursor": "^1.4.2",
+    "mongoose": "^8.18.0",
+    "puppeteer": "^25.1.0",
+    "puppeteer-real-browser": "^1.4.4",
+    "telegraf": "^4.16.3"
+  }
+}
