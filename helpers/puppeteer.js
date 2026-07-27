@@ -824,7 +824,7 @@ async function getBrowser() {
     
     const chromePath = await resolveChromePath();
 
-    const disableXvfb = !isHeadless && process.platform === 'linux' && Boolean(process.env.DISPLAY);
+    const disableXvfb = process.platform === 'linux' && (isHeadless || Boolean(process.env.DISPLAY));
     console.log(`Browser launch config: headless=${String(isHeadless)} display=${process.env.DISPLAY || ''} disableXvfb=${String(disableXvfb)}`);
 
     console.log('Launching browser...');
@@ -1127,6 +1127,26 @@ async function tryCookieLogin(targetPage) {
   }
 }
 
+async function tryProfileSessionLogin(targetPage) {
+  try {
+    console.log('🧾 Checking persisted profile session...');
+    await targetPage.goto('https://x.com/home', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+    await waitForPageToSettleFast(targetPage);
+    const direct = await isLoggedInPage(targetPage);
+    if (direct) {
+      return { attempted: true, success: true, page: targetPage };
+    }
+    const any = await waitForLoggedInPage(7000);
+    if (any) {
+      return { attempted: true, success: true, page: any };
+    }
+    return { attempted: true, success: false };
+  } catch (error) {
+    console.warn(`Profile-session check failed: ${error.message}`);
+    return { attempted: true, success: false };
+  }
+}
+
 function isDetachedContextError(err) {
   const msg = String(err?.message || err || '').toLowerCase();
   return (
@@ -1239,11 +1259,31 @@ async function loginToX(userId) {
       return true;
     }
 
+    await dbg('loginToX.step', { name: 'tryProfileSessionLogin' });
+    const profileLogin = await tryProfileSessionLogin(p);
+    if (profileLogin.success) {
+      page = profileLogin.page;
+      isLoggedInGlobal = true;
+      if (botUser) {
+        botUser.isLoggedIn = true;
+        botUser.lastLoginAt = new Date();
+        await botUser.save().catch(() => {});
+      }
+      console.log('✅ Logged in via persisted profile session!');
+      processQueue();
+      return true;
+    }
+
     if (isVps) {
       const requiresHeadful = process.platform !== 'win32';
       const hasDisplay = Boolean(process.env.DISPLAY);
       const isHeadless = shouldRunHeadless();
-      if (requiresHeadful && (!hasDisplay || isHeadless)) {
+      if (isHeadless) {
+        console.error('❌ No logged-in session detected on VPS (headless). Use "Import Auth" or provide cookie env vars. If you want manual login, set HEADLESS=false and DISPLAY=:99.');
+        await dbg('loginToX.vpsHeadlessNotLoggedIn', { hasDisplay, isHeadless });
+        return false;
+      }
+      if (requiresHeadful && !hasDisplay) {
         console.error('❌ VPS manual login requires a virtual display. Start Xvfb/VNC, set DISPLAY=:99, and set HEADLESS=false, then press Login again.');
         await dbg('loginToX.vpsManualBlocked', { hasDisplay, isHeadless });
         return false;

@@ -44,6 +44,37 @@ Notes:
 - `CHROME_USER_DATA_DIR` persists Chrome state (profile, cookies, etc).
 - `AUTH_STATE_DIR` is where Export/Import Auth reads/writes the portable auth snapshot.
 
+## VPS Mode: Trying To Login vs Post-Login
+
+### Trying to login (needs a visible browser)
+
+Use this only when you must manually interact with the login UI on the VPS (captcha/device checks).
+
+Requirements:
+- X server available (Xvfb + VNC)
+- `DISPLAY=:99` available to the bot process
+- `.env` must include:
+
+```env
+HEADLESS=false
+VPS=true
+```
+
+### Post-login (normal VPS operation)
+
+This is the default steady-state mode after auth has been imported or a session already exists.
+
+Requirements:
+- No X server needed
+- `.env` should include:
+
+```env
+HEADLESS=true
+VPS=true
+```
+
+Important: actions like **📥 Import Auth**, **🔐 Login**, and any X automation will launch Chrome. If `HEADLESS=false` without `DISPLAY`, Puppeteer will fail with “Missing X server”.
+
 ## Admin Panel (Telegram) — Main Actions
 
 In the bot DM (admins only), `/start` shows buttons:
