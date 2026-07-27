@@ -1728,7 +1728,7 @@ async function postWithGif(task) {
   await preparePage(p);
 
   const fileInputSelector = 'input[data-testid="fileInput"][type="file"]';
-  const postButtonSelector = 'button[data-testid="tweetButton"]';
+  const postButtonSelector = 'button[data-testid="tweetButton"], button[data-testid="tweetButtonInline"]';
   const textAreaSelector = '[data-testid="tweetTextarea_0"]';
 
   try {
@@ -1763,6 +1763,15 @@ async function postWithGif(task) {
     }
 
     await p.waitForSelector('button[aria-label="Remove media"]', { timeout: 60000 });
+    await p
+      .waitForFunction(
+        () => {
+          const progress = document.querySelector('[role="progressbar"]');
+          return !progress;
+        },
+        { timeout: 60000 }
+      )
+      .catch(() => {});
     const imageFailed = await p.evaluate(() => {
       const text = (document.body?.innerText || '').toLowerCase();
       return text.includes('your image file could not be processed');

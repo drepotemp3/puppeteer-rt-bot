@@ -158,6 +158,11 @@ systemctl status retweetbot --no-pager
 journalctl -u retweetbot -f
 ```
 
+### Step 3.1 (Optional): see all logs
+
+```bash 
+journalctl -u retweetbot -n 500 --no-pager -o cat
+```
 ### Step 4: common operations
 
 ```bash
