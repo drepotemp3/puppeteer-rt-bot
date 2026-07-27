@@ -46,12 +46,29 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+function paceConfig(mode) {
+  const normalized = String(mode || '').trim().toLowerCase();
+  if (normalized === 'slow') return { mode: 'slow', perMin: 2, delayMs: 30000 };
+  if (normalized === 'fast') return { mode: 'fast', perMin: 8, delayMs: 7500 };
+  return { mode: 'normal', perMin: 4, delayMs: 15000 };
+}
+
+function setSessionPace(session, mode) {
+  const cfg = paceConfig(mode);
+  session.paceMode = cfg.mode;
+  session.actionsPerMin = cfg.perMin;
+  session.actionDelayMs = cfg.delayMs;
+}
+
 function getGroupSession(chatId) {
   const key = chatId.toString();
   if (!groupSessions[key]) {
+    const cfg = paceConfig('normal');
     groupSessions[key] = {
       active: false,
-      slow: false,
+      paceMode: cfg.mode,
+      actionsPerMin: cfg.perMin,
+      actionDelayMs: cfg.delayMs,
       processing: false,
       posting: false,
       queue: [],
@@ -65,8 +82,8 @@ function getGroupSession(chatId) {
 }
 
 function resetGroupSession(session) {
+  setSessionPace(session, 'normal');
   session.active = false;
-  session.slow = false;
   session.processing = false;
   session.posting = false;
   session.queue = [];
@@ -1019,7 +1036,12 @@ export function setupBot(bot) {
         }
 
         const status = result?.status || 'error';
-        const ok = status === 'reposted' || status === 'undone';
+        const ok =
+          status === 'reposted'
+          || status === 'undone'
+          || status === 'already_reposted'
+          || status === 'already_undone'
+          || status === 'not_reposted';
         if (ok) {
           session.stats.success += 1;
         } else {
@@ -1035,8 +1057,8 @@ export function setupBot(bot) {
           messageId: item.messageId
         });
 
-        if (session.slow && item.kind !== 'undo') {
-          await sleep(40000);
+        if (session.actionDelayMs && session.active && session.queue.length > 0) {
+          await sleep(session.actionDelayMs);
         }
       }
     } finally {
@@ -1077,12 +1099,12 @@ export function setupBot(bot) {
       await safeReply(ctx, 'No session yet. Please start one first using /s or /open');
       return;
     }
-    session.slow = true;
+    setSessionPace(session, 'slow');
     await setGroupTyping(ctx.chat.id, true, true);
-    await safeReply(ctx, 'Slow mode enabled.');
+    await safeReply(ctx, `slow mode enabled✅\nNow posting ${session.actionsPerMin} tweet per min`);
   });
 
-  bot.command('endslow', async (ctx) => {
+  bot.command('normal', async (ctx) => {
     if (!ctx.chat || !['group', 'supergroup'].includes(ctx.chat.type)) return;
     const isAdminUser = await requireAdminForGroup(ctx);
     if (!isAdminUser) return;
@@ -1091,9 +1113,23 @@ export function setupBot(bot) {
       await safeReply(ctx, 'No session yet. Please start one first using /s or /open');
       return;
     }
-    session.slow = false;
+    setSessionPace(session, 'normal');
     await setGroupTyping(ctx.chat.id, true, true);
-    await safeReply(ctx, 'Slow mode disabled.');
+    await safeReply(ctx, `normal mode enabled✅\nNow posting ${session.actionsPerMin} tweet per min`);
+  });
+
+  bot.command('fast', async (ctx) => {
+    if (!ctx.chat || !['group', 'supergroup'].includes(ctx.chat.type)) return;
+    const isAdminUser = await requireAdminForGroup(ctx);
+    if (!isAdminUser) return;
+    const session = getGroupSession(ctx.chat.id);
+    if (!session.active) {
+      await safeReply(ctx, 'No session yet. Please start one first using /s or /open');
+      return;
+    }
+    setSessionPace(session, 'fast');
+    await setGroupTyping(ctx.chat.id, true, true);
+    await safeReply(ctx, `fast mode enabled✅\nNow posting ${session.actionsPerMin} tweet per min`);
   });
 
   bot.command('retry', async (ctx) => {
@@ -1125,7 +1161,8 @@ export function setupBot(bot) {
     let retriedFailed = 0;
 
     try {
-      for (const item of failed) {
+      for (let i = 0; i < failed.length; i++) {
+        const item = failed[i];
         const h = item.h;
         const url = h.url;
         const chatId = h.chatId ?? ctx.chat.id;
@@ -1176,8 +1213,8 @@ export function setupBot(bot) {
           retriedFailed += 1;
         }
 
-        if (session.slow && h.action !== 'undo') {
-          await sleep(40000);
+        if (session.actionDelayMs && i < failed.length - 1) {
+          await sleep(session.actionDelayMs);
         }
       }
     } finally {
@@ -1203,14 +1240,16 @@ export function setupBot(bot) {
       return;
     }
     const remaining = session.queue.length;
+    const totalLinks = session.stats.received;
+    const completed = session.stats.success;
+    const failedCount = session.stats.failed;
     session.active = false;
     session.queue = [];
 
-    await safeReply(ctx, 'Session ended.\nAll queued message cleared');
-    const notReposted = remaining + session.stats.failed;
-    const linkWord = notReposted === 1 ? 'link' : 'links';
-    const verb = notReposted === 1 ? 'was' : 'were';
-    await safeReply(ctx, `${notReposted} ${linkWord} ${verb} not reposted.`);
+    await safeReply(
+      ctx,
+      `RT PROCESS COMPLETED\nTotal Links: ${totalLinks}\nCompleted: ${completed}\nFailed: ${failedCount}\nQueue:${remaining}`
+    );
     await setGroupTyping(ctx.chat.id, false);
 
     session.lastEnded = {
@@ -1230,8 +1269,10 @@ export function setupBot(bot) {
       return;
     }
     const stats = session.active ? session.stats : session.lastEnded.stats;
-    await safeReply(ctx,
-      `Total Links Received: ${stats.received}\nSuccessful Repost: ${stats.success}\nFailed Repost: ${stats.failed}`
+    const inQueue = session.active ? session.queue.length : 0;
+    await safeReply(
+      ctx,
+      `📊 Session Stats\n\n🔗 Links Received : ${stats.received}\n✅ Done : ${stats.success}\n❌ Failed : ${stats.failed}\n⏳ In Queue : ${inQueue}\n`
     );
   });
 

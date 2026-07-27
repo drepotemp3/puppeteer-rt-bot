@@ -82,6 +82,10 @@ scp -r .auth_state root@YOUR_VPS_IP:/path/to/your/repo/
 
 If the browser visibly shows you’re logged in but the bot says you aren’t, the code now waits and re-checks login for up to ~20 seconds before deciding “not logged in”.
 
+VPS post-login behavior:
+- When running with `HEADLESS=true`, the bot will not demand `DISPLAY`/Xvfb for normal operation.
+- If login state is unclear, the bot now actively checks the persisted profile session by navigating to `https://x.com/home` before it shows any “start Xvfb/VNC” guidance.
+
 ### Step 4: after restart, why the menu shows Logout/Login
 
 The menu is decided by:
@@ -100,6 +104,8 @@ Use this when:
 - X blocks headless / automation on the VPS
 - You want to manually complete login (or a captcha / device verification step) on the VPS itself
 - You are moving to a brand new account/device and you want to “look human” on the VPS
+
+If the VPS is in normal post-login mode (`HEADLESS=true`) and you see Xvfb-related errors in logs, switch back to the recommended flow in Part A (Import Auth) and confirm the VPS `.env` is not forcing `HEADLESS=false`.
 
 ### Concepts (what each tool does)
 

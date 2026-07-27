@@ -1429,6 +1429,30 @@ async function notifySeededAdmins(telegram, text) {
   }
 }
 
+function escapeMarkdown(text) {
+  return String(text ?? '').replace(/([_*`[\]()])/g, '\\$1');
+}
+
+function escapeHtml(text) {
+  return String(text ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+async function notifySeededAdminsWithOptions(telegram, text, options = {}) {
+  if (!telegram) return;
+  const admins = await Admin.find();
+  const adminsWithUserId = admins.filter(admin => admin?.userId);
+  await Promise.allSettled(
+    adminsWithUserId.map((admin) =>
+      telegram.sendMessage(admin.userId, text, { disable_web_page_preview: true, ...options })
+    )
+  );
+}
+
 async function reactThumbsUp(telegram, chatId, messageId) {
   if (!telegram || !chatId || !messageId) return;
 
@@ -1494,6 +1518,10 @@ async function processSingleRetweet(task) {
   const postId = extractXPostId(url);
   
   if (!postId) {
+    if (!suppressNotify) {
+      const msg = `Repost failed❌\n\nLink:\n<code>${escapeHtml(url)}</code>\n\nReason:\n<i>${escapeHtml('Invalid link')}</i>`;
+      await notifySeededAdminsWithOptions(telegram, msg, { parse_mode: 'HTML' });
+    }
     await safeClosePage(b, p);
     return { status: 'invalid_url' };
   }
@@ -1535,6 +1563,10 @@ async function processSingleRetweet(task) {
 
     if (result?.timedOut) {
       console.warn(`Retweet UI detection timed out for ${url}`);
+      if (!suppressNotify) {
+        const msg = `Repost failed❌\n\nLink:\n<code>${escapeHtml(url)}</code>\n\nReason:\n<i>${escapeHtml('Tweet not opened / timeout')}</i>`;
+        await notifySeededAdminsWithOptions(telegram, msg, { parse_mode: 'HTML' });
+      }
       return { status: 'timeout' };
     }
 
@@ -1576,6 +1608,11 @@ async function processSingleRetweet(task) {
 
   } catch (err) {
     console.error('Retweet error:', err);
+    if (!suppressNotify) {
+      const reason = err?.message || String(err);
+      const msg = `Repost failed❌\n\nLink:\n<code>${escapeHtml(url)}</code>\n\nReason:\n<i>${escapeHtml(reason || 'Error')}</i>`;
+      await notifySeededAdminsWithOptions(telegram, msg, { parse_mode: 'HTML' });
+    }
     return { status: 'error', error: err?.message || String(err) };
   } finally {
     await safeClosePage(b, p);

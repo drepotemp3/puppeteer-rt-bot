@@ -73,7 +73,10 @@ HEADLESS=true
 VPS=true
 ```
 
-Important: actions like **📥 Import Auth**, **🔐 Login**, and any X automation will launch Chrome. If `HEADLESS=false` without `DISPLAY`, Puppeteer will fail with “Missing X server”.
+Important:
+- Actions like **📥 Import Auth**, **🔐 Login**, and any X automation will launch Chrome.
+- If `HEADLESS=false` without `DISPLAY`, Puppeteer will fail with “Missing X server”.
+- In post-login mode (`HEADLESS=true`), the bot does not require Xvfb/VNC. If you see logs about missing Xvfb, confirm `HEADLESS=true` and restart the systemd service after updating `.env` or pulling new code.
 
 ## Admin Panel (Telegram) — Main Actions
 
