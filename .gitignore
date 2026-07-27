@@ -44,7 +44,6 @@ render-idea.txt
 tabs.html
 
 # IDE files
-.vscode/
 .idea/
 *.swp
 *.swo
@@ -58,3 +57,7 @@ profile-seed/**/GrShaderCache/
 profile-seed/**/ShaderCache/
 profile-seed/**/Crashpad/
 profile-seed/**/Singleton*
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+.gitignore

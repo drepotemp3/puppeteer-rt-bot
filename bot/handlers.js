@@ -69,6 +69,7 @@ function getGroupSession(chatId) {
       paceMode: cfg.mode,
       actionsPerMin: cfg.perMin,
       actionDelayMs: cfg.delayMs,
+      stopRequested: false,
       processing: false,
       posting: false,
       queue: [],
@@ -86,6 +87,7 @@ function resetGroupSession(session) {
   session.active = false;
   session.processing = false;
   session.posting = false;
+  session.stopRequested = false;
   session.queue = [];
   session.userLinkCount = {};
   session.stats = { received: 0, success: 0, failed: 0 };
@@ -424,6 +426,12 @@ async function safeReply(ctx, text, extra = {}) {
     } catch (e) {}
     return null;
   }
+  const replyToMessageId =
+    extra?.reply_to_message_id
+    ?? ctx?.message?.message_id
+    ?? ctx?.callbackQuery?.message?.message_id
+    ?? null;
+  const mergedExtra = replyToMessageId ? { ...extra, reply_to_message_id: replyToMessageId } : extra;
   const maxAttempts = 4;
   let attempt = 0;
   let lastErr;
@@ -431,7 +439,7 @@ async function safeReply(ctx, text, extra = {}) {
   while (attempt < maxAttempts) {
     attempt += 1;
     try {
-      return await ctx.reply(text, extra);
+      return await ctx.reply(text, mergedExtra);
     } catch (err) {
       lastErr = err;
       const statusCode = err?.response?.error_code || err?.statusCode;
@@ -912,7 +920,7 @@ export function setupBot(bot) {
 
     if (!ctx?.from) {
       if (isCmd && ctx?.message?.sender_chat) {
-        await ctx.reply('Disable anonymous admin mode and resend the command.').catch(() => {});
+        await safeReply(ctx, 'Disable anonymous admin mode and resend the command.').catch(() => {});
       }
       return false;
     }
@@ -925,9 +933,7 @@ export function setupBot(bot) {
           const status = member?.status;
           const isGroupAdmin = status === 'creator' || status === 'administrator';
           if (isGroupAdmin) {
-            await ctx
-              .reply("You're a group admin, but not registered as a bot admin. Ask the owner to add you via the bot admin list, then DM the bot /start once.")
-              .catch(() => {});
+            await safeReply(ctx, "You're a group admin, but not registered as a bot admin. Ask the owner to add you via the bot admin list, then DM the bot /start once.").catch(() => {});
           }
         } catch (e) {}
       }
@@ -1013,7 +1019,7 @@ export function setupBot(bot) {
     session.processing = true;
 
     try {
-      while (session.active && session.queue.length > 0) {
+      while (session.active && session.queue.length > 0 && !session.stopRequested) {
         const item = session.queue.shift();
         if (!item) continue;
         let result;
@@ -1228,6 +1234,27 @@ export function setupBot(bot) {
     );
   });
 
+  bot.command('stop', async (ctx) => {
+    if (!ctx.chat || !['group', 'supergroup'].includes(ctx.chat.type)) return;
+    const isAdminUser = await requireAdminForGroup(ctx);
+    if (!isAdminUser) return;
+
+    const session = getGroupSession(ctx.chat.id);
+    session.stopRequested = true;
+    session.active = false;
+    session.queue = [];
+    session.userLinkCount = {};
+    session.processing = false;
+    session.posting = false;
+    session.stats = { received: 0, success: 0, failed: 0 };
+    session.history = [];
+    session.lastEnded = null;
+
+    await setGroupTyping(ctx.chat.id, false, true);
+    await resetBrowserSession().catch(() => {});
+    await safeReply(ctx, 'Stopped successfully✅\nAll previous sessions are ended, and links are cleared from the bot queue');
+  });
+
   bot.command(['close', 'c'], async (ctx) => {
     if (!ctx.chat || !['group', 'supergroup'].includes(ctx.chat.type)) return;
     const isAdminUser = await requireAdminForGroup(ctx);
@@ -1377,7 +1404,7 @@ export function setupBot(bot) {
     if (ctx.chat.type !== 'private') {
       if (text.startsWith('/')) {
         if (!ctx.from && ctx.message?.sender_chat) {
-          await ctx.reply('Disable anonymous admin mode and resend the command.').catch(() => {});
+          await safeReply(ctx, 'Disable anonymous admin mode and resend the command.').catch(() => {});
         }
         return;
       }
@@ -1394,6 +1421,11 @@ export function setupBot(bot) {
       const isAdminUser = await requireAdminForGroup(ctx);
       const urlsInMessage = extractAllXUrls(text);
       if (urlsInMessage.length === 0) return;
+
+      if (isAdminUser && urlsInMessage.length > 50) {
+        await safeReply(ctx, `Bulk retweets must be 50 links maximim\n\nYou sent ${urlsInMessage.length} links, reduce it to 50`);
+        return;
+      }
 
       if (!isAdminUser) {
         const key = ctx.from.id.toString();
@@ -1440,7 +1472,7 @@ export function setupBot(bot) {
     if (ctx.chat.type === 'private' && state) {
       if (state.step === 'settings_email') {
         userStates[userId] = { step: 'settings_password', pendingEmail: text };
-        await ctx.reply('Now send your X password:', backMenuKeyboard());
+        await safeReply(ctx, 'Now send your X password:', backMenuKeyboard());
         return;
       }
 
@@ -1453,7 +1485,7 @@ export function setupBot(bot) {
         await user.save();
         await resetBrowserSession();
         delete userStates[userId];
-        await ctx.reply('Settings saved. Browser profile was preserved to avoid X blocking, but the runtime session was reset.', mainMenuKeyboard(await resolveMenuLoggedIn(userId)));
+        await safeReply(ctx, 'Settings saved. Browser profile was preserved to avoid X blocking, but the runtime session was reset.', mainMenuKeyboard(await resolveMenuLoggedIn(userId)));
         return;
       }
 
@@ -1472,7 +1504,7 @@ export function setupBot(bot) {
         }
         await admin.save();
         delete userStates[userId];
-        await ctx.reply('Admin added!', mainMenuKeyboard(await resolveMenuLoggedIn(userId)));
+        await safeReply(ctx, 'Admin added!', mainMenuKeyboard(await resolveMenuLoggedIn(userId)));
         return;
       }
 
@@ -1483,7 +1515,7 @@ export function setupBot(bot) {
           await Admin.deleteOne({ userId: text });
         }
         delete userStates[userId];
-        await ctx.reply('Admin removed!', mainMenuKeyboard(await resolveMenuLoggedIn(userId)));
+        await safeReply(ctx, 'Admin removed!', mainMenuKeyboard(await resolveMenuLoggedIn(userId)));
         return;
       }
 
@@ -1506,7 +1538,7 @@ export function setupBot(bot) {
           await group.save();
         }
         delete userStates[userId];
-        await ctx.reply('Group approved!', mainMenuKeyboard(await resolveMenuLoggedIn(userId)));
+        await safeReply(ctx, 'Group approved!', mainMenuKeyboard(await resolveMenuLoggedIn(userId)));
         return;
       }
 
@@ -1517,7 +1549,7 @@ export function setupBot(bot) {
           await ApprovedGroup.updateOne({ chatId: text }, { isApproved: false });
         }
         delete userStates[userId];
-        await ctx.reply('Group disapproved!', mainMenuKeyboard(await resolveMenuLoggedIn(userId)));
+        await safeReply(ctx, 'Group disapproved!', mainMenuKeyboard(await resolveMenuLoggedIn(userId)));
         return;
       }
     }
