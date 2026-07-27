@@ -347,11 +347,23 @@ async function isApprovedGroup(chatId) {
   return !!group;
 }
 
-function mainMenuKeyboard() {
+async function resolveMenuLoggedIn(userId) {
+  if (isLoggedIn()) return true;
+  if (userId == null) return false;
+  try {
+    const record = await BotUser.findOne({ userId: userId.toString() });
+    return Boolean(record?.isLoggedIn);
+  } catch (e) {
+    return false;
+  }
+}
+
+function mainMenuKeyboard(forceLoggedIn = null) {
   const buttons = [
     [Markup.button.callback('⚙️ Bot Settings', 'menu_settings')],
   ];
-  if (isLoggedIn()) {
+  const loggedIn = forceLoggedIn == null ? isLoggedIn() : Boolean(forceLoggedIn);
+  if (loggedIn) {
     buttons.push([Markup.button.callback('🚪 Logout', 'menu_logout')]);
   } else {
     buttons.push([Markup.button.callback('🔐 Login', 'menu_login')]);
@@ -522,14 +534,14 @@ export function setupBot(bot) {
         return;
       }
       await syncAdminRecord(ctx.from, admin);
-      await safeReply(ctx, 'Welcome to Retweet Bot!', mainMenuKeyboard());
+      await safeReply(ctx, 'Welcome to Retweet Bot!', mainMenuKeyboard(await resolveMenuLoggedIn(ctx.from?.id)));
     }
   });
 
   bot.action('back_menu', async (ctx) => {
     await ctx.answerCbQuery().catch(() => {});
     delete userStates[ctx.from.id];
-    await editOrReply(ctx, 'Welcome to Retweet Bot!', mainMenuKeyboard());
+    await editOrReply(ctx, 'Welcome to Retweet Bot!', mainMenuKeyboard(await resolveMenuLoggedIn(ctx.from?.id)));
   });
 
   bot.action('menu_settings', async (ctx) => {
@@ -569,7 +581,7 @@ export function setupBot(bot) {
       await user.save();
     }
     await resetBrowserSession();
-    await editOrReply(ctx, 'Credentials deleted. Browser profile preserved to avoid triggering X anti-bot checks.', mainMenuKeyboard());
+    await editOrReply(ctx, 'Credentials deleted. Browser profile preserved to avoid triggering X anti-bot checks.', mainMenuKeyboard(await resolveMenuLoggedIn(ctx.from?.id)));
   });
 
   bot.action('menu_login', async (ctx) => {
@@ -582,7 +594,7 @@ export function setupBot(bot) {
       if (isLoggedIn()) {
         await safeReply(ctx, 'Already logged in.');
         if (ctx.callbackQuery && ctx.callbackQuery.message) {
-          await ctx.editMessageText('Welcome to Retweet Bot!', mainMenuKeyboard()).catch(() => {});
+          await ctx.editMessageText('Welcome to Retweet Bot!', mainMenuKeyboard(await resolveMenuLoggedIn(ctx.from?.id))).catch(() => {});
         }
         return;
       }
@@ -590,7 +602,7 @@ export function setupBot(bot) {
       const chatId = ctx.chat?.id;
       const messageId = ctx.callbackQuery?.message?.message_id;
       if (ctx.callbackQuery && ctx.callbackQuery.message) {
-        await ctx.editMessageText('Logging in...', mainMenuKeyboard()).catch(() => {});
+        await ctx.editMessageText('Logging in...', mainMenuKeyboard(await resolveMenuLoggedIn(ctx.from?.id))).catch(() => {});
       } else {
         await safeReply(ctx, 'Logging in...');
       }
@@ -615,7 +627,7 @@ export function setupBot(bot) {
 
         try {
           if (chatId && messageId) {
-            await bot.telegram.editMessageText(chatId, messageId, undefined, 'Welcome to Retweet Bot!', mainMenuKeyboard()).catch(() => {});
+            await bot.telegram.editMessageText(chatId, messageId, undefined, 'Welcome to Retweet Bot!', mainMenuKeyboard(await resolveMenuLoggedIn(ctx.from?.id))).catch(() => {});
           }
         } finally {
           if (lockKey) loginLocks[lockKey] = false;
@@ -641,7 +653,7 @@ export function setupBot(bot) {
       await safeReply(ctx, 'Logged out successfully!');
       // Now edit the previous message that had the menu (the one that triggered this callback)
       if (ctx.callbackQuery && ctx.callbackQuery.message) {
-        await ctx.editMessageText('Welcome to Retweet Bot!', mainMenuKeyboard()).catch(() => {});
+        await ctx.editMessageText('Welcome to Retweet Bot!', mainMenuKeyboard(await resolveMenuLoggedIn(ctx.from?.id))).catch(() => {});
       }
     } catch (err) {
       await safeReply(ctx, `Error logging out: ${err.message}`);
@@ -658,7 +670,7 @@ export function setupBot(bot) {
       if (!isLoggedIn()) {
         await safeReply(ctx, 'Not logged in.');
         if (ctx.callbackQuery && ctx.callbackQuery.message) {
-          await ctx.editMessageText('Welcome to Retweet Bot!', mainMenuKeyboard()).catch(() => {});
+          await ctx.editMessageText('Welcome to Retweet Bot!', mainMenuKeyboard(await resolveMenuLoggedIn(ctx.from?.id))).catch(() => {});
         }
         return;
       }
@@ -666,7 +678,7 @@ export function setupBot(bot) {
       const chatId = ctx.chat?.id;
       const messageId = ctx.callbackQuery?.message?.message_id;
       if (ctx.callbackQuery && ctx.callbackQuery.message) {
-        await ctx.editMessageText('Exporting auth...', mainMenuKeyboard()).catch(() => {});
+        await ctx.editMessageText('Exporting auth...', mainMenuKeyboard(await resolveMenuLoggedIn(ctx.from?.id))).catch(() => {});
       } else {
         await safeReply(ctx, 'Exporting auth...');
       }
@@ -676,14 +688,14 @@ export function setupBot(bot) {
         try {
           await saveAuthState();
           if (chatId && messageId) {
-            await bot.telegram.editMessageText(chatId, messageId, undefined, 'Auth exported to .auth_state/', mainMenuKeyboard()).catch(() => {});
+            await bot.telegram.editMessageText(chatId, messageId, undefined, 'Auth exported to .auth_state/', mainMenuKeyboard(await resolveMenuLoggedIn(ctx.from?.id))).catch(() => {});
           } else {
             await safeReply(ctx, 'Auth exported to .auth_state/');
           }
         } catch (e) {
           const msg = e?.message || String(e);
           if (chatId && messageId) {
-            await bot.telegram.editMessageText(chatId, messageId, undefined, `Export failed: ${msg}`, mainMenuKeyboard()).catch(() => {});
+            await bot.telegram.editMessageText(chatId, messageId, undefined, `Export failed: ${msg}`, mainMenuKeyboard(await resolveMenuLoggedIn(ctx.from?.id))).catch(() => {});
           } else {
             await safeReply(ctx, `Export failed: ${msg}`);
           }
@@ -708,7 +720,7 @@ export function setupBot(bot) {
       const chatId = ctx.chat?.id;
       const messageId = ctx.callbackQuery?.message?.message_id;
       if (ctx.callbackQuery && ctx.callbackQuery.message) {
-        await ctx.editMessageText('Importing auth...', mainMenuKeyboard()).catch(() => {});
+        await ctx.editMessageText('Importing auth...', mainMenuKeyboard(await resolveMenuLoggedIn(ctx.from?.id))).catch(() => {});
       } else {
         await safeReply(ctx, 'Importing auth...');
       }
@@ -722,7 +734,7 @@ export function setupBot(bot) {
           loggedIn = false;
           const msg = e?.message || String(e);
           if (chatId && messageId) {
-            await bot.telegram.editMessageText(chatId, messageId, undefined, `Import failed: ${msg}`, mainMenuKeyboard()).catch(() => {});
+            await bot.telegram.editMessageText(chatId, messageId, undefined, `Import failed: ${msg}`, mainMenuKeyboard(await resolveMenuLoggedIn(ctx.from?.id))).catch(() => {});
           } else {
             await safeReply(ctx, `Import failed: ${msg}`);
           }
@@ -742,7 +754,7 @@ export function setupBot(bot) {
         try {
           const text = loggedIn ? 'Auth imported. Logged in.' : 'Auth imported. Still not logged in.';
           if (chatId && messageId) {
-            await bot.telegram.editMessageText(chatId, messageId, undefined, text, mainMenuKeyboard()).catch(() => {});
+            await bot.telegram.editMessageText(chatId, messageId, undefined, text, mainMenuKeyboard(await resolveMenuLoggedIn(ctx.from?.id))).catch(() => {});
           } else {
             await safeReply(ctx, text);
           }
@@ -1400,7 +1412,7 @@ export function setupBot(bot) {
         await user.save();
         await resetBrowserSession();
         delete userStates[userId];
-        await ctx.reply('Settings saved. Browser profile was preserved to avoid X blocking, but the runtime session was reset.', mainMenuKeyboard());
+        await ctx.reply('Settings saved. Browser profile was preserved to avoid X blocking, but the runtime session was reset.', mainMenuKeyboard(await resolveMenuLoggedIn(userId)));
         return;
       }
 
@@ -1419,7 +1431,7 @@ export function setupBot(bot) {
         }
         await admin.save();
         delete userStates[userId];
-        await ctx.reply('Admin added!', mainMenuKeyboard());
+        await ctx.reply('Admin added!', mainMenuKeyboard(await resolveMenuLoggedIn(userId)));
         return;
       }
 
@@ -1430,7 +1442,7 @@ export function setupBot(bot) {
           await Admin.deleteOne({ userId: text });
         }
         delete userStates[userId];
-        await ctx.reply('Admin removed!', mainMenuKeyboard());
+        await ctx.reply('Admin removed!', mainMenuKeyboard(await resolveMenuLoggedIn(userId)));
         return;
       }
 
@@ -1453,7 +1465,7 @@ export function setupBot(bot) {
           await group.save();
         }
         delete userStates[userId];
-        await ctx.reply('Group approved!', mainMenuKeyboard());
+        await ctx.reply('Group approved!', mainMenuKeyboard(await resolveMenuLoggedIn(userId)));
         return;
       }
 
@@ -1464,7 +1476,7 @@ export function setupBot(bot) {
           await ApprovedGroup.updateOne({ chatId: text }, { isApproved: false });
         }
         delete userStates[userId];
-        await ctx.reply('Group disapproved!', mainMenuKeyboard());
+        await ctx.reply('Group disapproved!', mainMenuKeyboard(await resolveMenuLoggedIn(userId)));
         return;
       }
     }

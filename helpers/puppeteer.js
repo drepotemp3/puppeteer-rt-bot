@@ -240,9 +240,27 @@ async function loadAuthState() {
   }, localStorage).catch(() => {});
 
   await p.goto('https://x.com/home', { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
-  const loggedIn = await isLoggedInPage(p);
-  isLoggedInGlobal = Boolean(loggedIn);
-  return loggedIn;
+  await waitForPageToSettleFast(p);
+
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline) {
+    const direct = await isLoggedInPage(p);
+    if (direct) {
+      page = p;
+      isLoggedInGlobal = true;
+      return true;
+    }
+    const any = await findLoggedInPage().catch(() => null);
+    if (any) {
+      page = any;
+      isLoggedInGlobal = true;
+      return true;
+    }
+    await sleep(1000);
+  }
+
+  isLoggedInGlobal = false;
+  return false;
 }
 
 async function preparePage(targetPage) {

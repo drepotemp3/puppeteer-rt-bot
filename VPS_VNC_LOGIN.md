@@ -1,41 +1,126 @@
-# VPS Manual Login (Xvfb + VNC) — Retweet Bot
+# VPS Login & Auth Transfer — Retweet Bot
 
-This project supports running on a VPS while still allowing a one-time (or occasional) manual X login in a visible browser, with auth persisted to disk (Chrome profile directory).
+This project can run on a VPS without constantly re-logging into X.
 
-This document explains:
-- Why a VPS needs Xvfb/VNC for a “visible” browser
-- The exact commands and order to bring the VNC screen up reliably
-- How to run the bot so Chrome actually appears in VNC
-- The codebase changes that make this stable (no stuck “Launching browser…”, no profile lock corruption)
+There are two ways to get an authenticated X session onto the VPS:
+
+1) **Recommended (no VNC): login locally → Export Auth → move `.auth_state/` to VPS → Import Auth**
+2) **Fallback (VPS visual): VNC/Xvfb manual login on the VPS**
+
+This document covers both and also describes the project features so a fresh chat session / new dev can understand the full context.
 
 ---
 
-## Concepts (what each tool does)
+## Part A — Recommended: Local Login → Export Auth → VPS Import
+
+### What this does
+
+- You login locally where X is least likely to block (real desktop, real GPU, your normal browser environment).
+- The bot exports session data to `.auth_state/`:
+  - `cookies.json`
+  - `localStorage.json`
+  - `sessionStorage.json`
+- On the VPS you import that auth state via the admin panel button and the bot becomes logged in without doing UI typing.
+
+### Step 1 (Local): login and export
+
+1) Start the bot locally (headful is fine).
+2) In Telegram admin panel:
+   - Press **🔐 Login**
+   - Complete login in the opened Chrome window (if needed)
+3) Press **💾 Export Auth**
+4) Confirm these files exist on your local machine:
+
+```text
+<repo_root>/.auth_state/cookies.json
+<repo_root>/.auth_state/localStorage.json
+<repo_root>/.auth_state/sessionStorage.json
+```
+
+### Step 2: get `.auth_state/` onto the VPS
+
+The VPS must receive the exported `.auth_state/` folder.
+
+#### Method A (GitHub): commit locally, pull on VPS
+
+Local machine (inside repo):
+
+```bash
+git add .auth_state
+git commit -m "Add auth state for VPS import"
+git push
+```
+
+If `git add .auth_state` reports the folder is ignored, run:
+
+```bash
+git add -f .auth_state
+git commit -m "Add auth state for VPS import"
+git push
+```
+
+VPS (inside repo):
+
+```bash
+cd /path/to/your/repo
+git pull
+```
+
+#### Method B (Direct copy): SCP the folder to the VPS
+
+From local machine, copy the folder to the VPS repo root:
+
+```bash
+scp -r .auth_state root@YOUR_VPS_IP:/path/to/your/repo/
+```
+
+### Step 3 (VPS): import via Telegram
+
+1) Start the bot on the VPS normally.
+2) In Telegram admin panel press **📥 Import Auth**.
+3) Expected result: **“Auth imported. Logged in.”**
+
+If the browser visibly shows you’re logged in but the bot says you aren’t, the code now waits and re-checks login for up to ~20 seconds before deciding “not logged in”.
+
+### Step 4: after restart, why the menu shows Logout/Login
+
+The menu is decided by:
+
+- in-memory runtime login state (fast), and
+- DB fallback (`BotUser.isLoggedIn`) so `/start` doesn’t randomly revert after process restarts.
+
+So once Import succeeds and DB is updated, `/start` should show **🚪 Logout**.
+
+---
+
+## Part B — Fallback: VPS Manual Login (Xvfb + VNC)
+
+Use this when:
+
+- X blocks headless / automation on the VPS
+- You want to manually complete login (or a captcha / device verification step) on the VPS itself
+- You are moving to a brand new account/device and you want to “look human” on the VPS
+
+### Concepts (what each tool does)
 
 **Xvfb**
-- A virtual X11 display server (a fake monitor) for Linux servers without a real screen.
-- We use `:99` as the display number.
+- Virtual display server for Linux servers without a real monitor (we use `:99`).
 
 **Openbox**
-- A lightweight window manager. Without a window manager, your VNC screen can look “blank” even if Xvfb is working.
+- Window manager; without it your VNC screen can look blank even when Xvfb is fine.
 
 **x11vnc**
-- Exposes the Xvfb display as a VNC server (`localhost:5900`).
+- Exposes Xvfb’s `:99` as a VNC server on `localhost:5900`.
 
 **SSH Tunnel**
-- For safety, VNC is bound to localhost on the VPS.
-- You access it from your PC using SSH port forwarding.
+- Keeps VNC bound to localhost on the VPS; you forward it to your PC.
 
-**TigerVNC Viewer (PC app)**
-- The VNC client you use on Windows to view and control the VPS “screen”.
+**VNC Viewer (Windows)**
+- TigerVNC (or any VNC viewer) connects to `127.0.0.1:15900` on your PC.
 
----
+### Repo/Env conventions (VPS visual mode)
 
-## Repo/Env conventions
-
-The bot loads environment variables from `.env` (in the repo root on the VPS) via `dotenv/config`.
-
-Recommended entries for VPS manual login:
+Suggested `.env` entries:
 
 ```env
 VPS=true
@@ -44,55 +129,18 @@ CHROME_USER_DATA_DIR=/var/lib/rtbot/chrome-profile
 ```
 
 Notes:
-- `VPS=true` makes the **Login button** follow the VPS manual-login path (no automated typing on VPS).
-- `HEADLESS=false` is required for a visible browser window.
-- `DISPLAY=:99` is not stored in `.env` by default; it must exist in the terminal environment that starts the bot (or be set inline on the start command).
+- `VPS=true` makes login flow “manual” (no automated credential typing on VPS).
+- You must pass `DISPLAY=:99` into the process environment when starting the bot.
 
----
+### Terminal layout (blocking-aware)
 
-## Terminal layout (blocking-aware)
+Use 3 terminals:
 
-You should operate with 3 terminals because some commands are intentionally blocking:
-
-1) **Terminal A (VPS: Display stack)**
-   - Runs Xvfb/Openbox/x11vnc as background services.
-   - These commands are non-blocking because they use `nohup ... &`.
-
-2) **Terminal B (LOCAL/PC: SSH tunnel)**
-   - Holds an SSH port-forward open.
-   - This terminal is blocking by design. Keep it open.
-
-3) **Terminal C (VPS: Bot)**
-   - Runs `node index.js`.
-   - This terminal is blocking by design. Keep it open.
-
----
-
-## One-time prerequisites (VPS)
-
-### Install packages
-
-```bash
-apt update
-apt install -y xvfb x11vnc openbox xterm x11-apps
-```
-
-### Install Chrome (Puppeteer-managed)
-
-Inside the repo folder:
-
-```bash
-cd ~/puppeteer-rt-bot
-npx puppeteer browsers install chrome
-```
-
----
-
-## Bring up the VNC screen (reliable method)
+1) **Terminal A (VPS): display stack**
+2) **Terminal B (LOCAL/PC): SSH tunnel** (blocking by design)
+3) **Terminal C (VPS): bot** (blocking by design)
 
 ### Terminal A (VPS): start Xvfb + Openbox + x11vnc
-
-Run:
 
 ```bash
 pkill Xvfb || true
@@ -110,150 +158,38 @@ nohup openbox >/tmp/openbox.log 2>&1 &
 nohup x11vnc -display :99 -forever -shared -rfbport 5900 -localhost -nopw -ncache 10 >/tmp/x11vnc.log 2>&1 &
 ```
 
-### Show a test window so the screen isn’t “blank”
-
-Still in Terminal A:
+Optional: show a test window (so VNC isn’t “blank”):
 
 ```bash
 DISPLAY=:99 xterm &
 ```
 
-If you connect via VNC and can see the xterm, the display stack is healthy.
-
----
-
-## Connect from your PC (Windows)
-
-### Terminal B (LOCAL): create the SSH tunnel
-
-Run and keep it open:
+### Terminal B (LOCAL): create SSH tunnel (keep open)
 
 ```bash
 ssh -L 15900:127.0.0.1:5900 root@YOUR_VPS_IP
 ```
 
-### TigerVNC Viewer
-
-Open TigerVNC Viewer on your PC and connect to:
+Then open your VNC viewer and connect to:
 
 ```text
 127.0.0.1:15900
 ```
 
-You should see the VPS screen (black background + xterm window is normal).
-
----
-
-## Start the bot so Chrome appears inside VNC
-
-### Terminal C (VPS): start the bot with DISPLAY + headful
-
-In another VPS terminal session:
+### Terminal C (VPS): start the bot so Chrome appears in VNC
 
 ```bash
-cd ~/puppeteer-rt-bot
+cd /path/to/your/repo
 DISPLAY=:99 HEADLESS=false node index.js
 ```
 
-That guarantees the bot process inherits `DISPLAY=:99`, and ensures Chrome opens inside the VNC session.
+### Manual login flow
+
+In Telegram admin panel:
+- Press **🔐 Login**
+- Complete login inside the VNC browser window
+- Press **💾 Export Auth** if you want to later reuse the session elsewhere
 
 ---
 
-## Manual login flow (in Telegram)
-
-In the bot’s admin panel:
-- Press **Login**
-
-On VPS (when `VPS=true`), the bot will:
-- Reuse existing logged-in session from the Chrome profile if present
-- Try cookie login if provided (`X_AUTH_TOKEN` / `X_CT0` / `X_COOKIES_JSON`)
-- Otherwise require manual login in the visible Chrome window inside VNC
-
-After you log in, the session persists in:
-
-```text
-/var/lib/rtbot/chrome-profile
-```
-
----
-
-## Latest stability fixes (what changed in code and why it matters)
-
-### 1) Stop puppeteer-real-browser from fighting your Xvfb
-
-When running headful (`HEADLESS=false`) on Linux with an existing `DISPLAY`, `puppeteer-real-browser` can try to spawn its own Xvfb and conflict with your already-running `:99`.
-
-The browser launch now passes:
-- `disableXvfb: true` when `DISPLAY` exists and headless is false
-
-This prevents “server already running” failures.
-
-### 2) Skip `connect()` on headful Linux; prefer `puppeteer.launch()`
-
-`connect()` (puppeteer-real-browser) sometimes hangs or returns `ECONNREFUSED` on the VPS, leaving a Chrome process behind and causing profile locking issues.
-
-The launch strategy is now:
-- **Headless:** may use `connect()`
-- **Headful Linux (VNC/Xvfb):** skips `connect()` and uses `puppeteer.launch()` directly
-
-### 3) Prevent profile lock corruption (SingletonLock)
-
-If Chrome is left running, the profile directory gets locked:
-
-```text
-/var/lib/rtbot/chrome-profile/SingletonLock
-```
-
-The bot now:
-- Detects the singleton-lock error during launch
-- Removes stale singleton files (`SingletonLock`, `SingletonSocket`, `SingletonCookie`)
-- Retries launching once
-
-If you get stuck anyway, the manual recovery is:
-
-```bash
-pkill -f chrome-linux64/chrome || true
-rm -f /var/lib/rtbot/chrome-profile/SingletonLock /var/lib/rtbot/chrome-profile/SingletonSocket /var/lib/rtbot/chrome-profile/SingletonCookie
-```
-
----
-
-## Troubleshooting checklist
-
-### VNC shows a black screen
-Black background is normal. Confirm you started a visible window:
-
-```bash
-DISPLAY=:99 xterm &
-```
-
-If xterm appears in VNC, your display stack is working.
-
-### Chrome doesn’t appear in VNC
-Ensure the bot process is started with the display:
-
-```bash
-DISPLAY=:99 HEADLESS=false node index.js
-```
-
-### Xvfb “server already running”
-You started Xvfb twice. Reset and restart:
-
-```bash
-pkill Xvfb || true
-rm -f /tmp/.X99-lock /tmp/.X11-unix/X99
-```
-
-### Profile “already running” (SingletonLock)
-Kill chrome + remove singleton files (see above).
-
----
-
-## Clean stop (optional)
-
-```bash
-pkill x11vnc || true
-pkill openbox || true
-pkill Xvfb || true
-```
-
+Operational instructions (systemd service, restart/pull workflow, logs, monitoring) are documented in [README.md](file:///c:/Users/Itive%20Peace%20Ufuoma/Desktop/TG%20BOTS/Client%20Ben/Rtbot-Without-XApi/README.md).
